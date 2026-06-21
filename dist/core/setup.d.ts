@@ -6,6 +6,7 @@ export type SetupInput = {
     agentKind?: string;
     humanOwner?: string;
     mcpCommandMode?: "auto" | "portable";
+    mcpPackageSpec?: string;
 };
 export type AgentRoomSetup = {
     store: AgentRoomStore;

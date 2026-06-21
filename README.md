@@ -63,8 +63,29 @@ Not implemented yet:
 
 ## One-Command Install
 
-The package is configured for npm as `@venture-ia/agentroom`. Once it is
-published, install AgentRoom in any project with:
+Before the npm package is published, install AgentRoom directly from GitHub:
+
+```bash
+npx -y github:VentureIA/Agent-Room init
+```
+
+For a specific agent client:
+
+```bash
+npx -y github:VentureIA/Agent-Room init claude
+npx -y github:VentureIA/Agent-Room init codex
+npx -y github:VentureIA/Agent-Room init all
+```
+
+When launched from GitHub, AgentRoom automatically writes MCP configs that keep
+using the GitHub package:
+
+```bash
+npx -y github:VentureIA/Agent-Room mcp
+```
+
+The package is also configured for npm as `@venture-ia/agentroom`. Once it is
+published, the npm command becomes:
 
 ```bash
 npx -y @venture-ia/agentroom init
@@ -95,8 +116,6 @@ Restart Claude Code or Codex after running `init`, then ask:
 ```text
 Use AgentRoom. Start the session and connect this project.
 ```
-
-Until the npm package is published, use the local GitHub checkout flow below.
 
 ## Publish To npm
 

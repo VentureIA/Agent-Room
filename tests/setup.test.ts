@@ -56,6 +56,7 @@ describe("setupAgentRoom", () => {
     const project = path.join(sandbox, "project");
     const home = path.join(sandbox, "home");
     const previousHome = process.env.AGENTROOM_HOME;
+    const previousNpmPackage = process.env.npm_config_package;
     process.env.AGENTROOM_HOME = home;
 
     try {
@@ -85,6 +86,17 @@ describe("setupAgentRoom", () => {
         cwd: project
       });
 
+      process.env.npm_config_package = "github:VentureIA/Agent-Room";
+      const githubPortable = await installMcpConfig(project, { client: "claude", name: "Install Demo", mcpCommandMode: "portable" });
+      const githubConfig = JSON.parse(await readFile(githubPortable.configPath, "utf8")) as {
+        mcpServers: { agentroom: { command: string; args: string[]; cwd: string } };
+      };
+      expect(githubConfig.mcpServers.agentroom).toMatchObject({
+        command: "npx",
+        args: ["-y", "github:VentureIA/Agent-Room", "mcp"],
+        cwd: project
+      });
+
       await writeFile(path.join(project, ".codex", "mcp.json"), `${JSON.stringify({ keep: true, mcp_servers: { other: { command: "node" } } })}\n`, "utf8");
       await installMcpConfig(project, { client: "codex", name: "Install Demo" });
       const mergedConfig = JSON.parse(await readFile(codex.configPath, "utf8")) as {
@@ -102,6 +114,8 @@ describe("setupAgentRoom", () => {
     } finally {
       if (previousHome === undefined) delete process.env.AGENTROOM_HOME;
       else process.env.AGENTROOM_HOME = previousHome;
+      if (previousNpmPackage === undefined) delete process.env.npm_config_package;
+      else process.env.npm_config_package = previousNpmPackage;
       await rm(sandbox, { recursive: true, force: true });
     }
   });
@@ -114,7 +128,7 @@ describe("setupAgentRoom", () => {
       await writePackage(project, "init-demo");
       const { stdout } = await execFileAsync(process.execPath, [tsxCli, cliPath, "init", "claude", "--name", "Init Demo"], {
         cwd: project,
-        env: { ...process.env, AGENTROOM_HOME: home }
+        env: { ...process.env, AGENTROOM_HOME: home, npm_config_package: "github:VentureIA/Agent-Room" }
       });
 
       expect(stdout).toContain("AgentRoom initialized for Init Demo.");
@@ -125,7 +139,7 @@ describe("setupAgentRoom", () => {
       const realProject = await realpath(project);
       expect(claudeConfig.mcpServers.agentroom).toMatchObject({
         command: "npx",
-        args: ["-y", "@venture-ia/agentroom", "mcp"],
+        args: ["-y", "github:VentureIA/Agent-Room", "mcp"],
         cwd: realProject,
         env: { AGENTROOM_PROJECT_ROOT: realProject }
       });

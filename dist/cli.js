@@ -54,6 +54,7 @@ program
     .option("--agent <agentKind>", "primary agent kind")
     .option("--owner <humanOwner>", "human owner", "Human owner")
     .option("--local-command", "write MCP config pointing to this local checkout instead of npx")
+    .option("--package <spec>", "package spec used by generated npx MCP configs")
     .action(async (client, options) => {
     if (client !== "codex" && client !== "claude" && client !== "all") {
         throw new Error("init client must be claude, codex, or all.");
@@ -68,7 +69,8 @@ program
             role: options.role,
             agentKind,
             humanOwner: options.owner,
-            mcpCommandMode: options.localCommand ? "auto" : "portable"
+            mcpCommandMode: options.localCommand ? "auto" : "portable",
+            mcpPackageSpec: options.package
         }));
     }
     const setup = results[0]?.setup;
@@ -95,6 +97,7 @@ program
     .option("--agent <agentKind>", "primary agent kind", "Codex")
     .option("--owner <humanOwner>", "human owner", "Human owner")
     .option("--portable", "write MCP config using npx -y @venture-ia/agentroom mcp")
+    .option("--package <spec>", "package spec used by generated npx MCP configs")
     .action(async (client, options) => {
     if (client !== "codex" && client !== "claude" && client !== "all") {
         throw new Error("install-mcp client must be codex, claude, or all.");
@@ -112,7 +115,8 @@ program
             role: options.role,
             agentKind: options.agent,
             humanOwner: options.owner,
-            mcpCommandMode: options.portable ? "portable" : "auto"
+            mcpCommandMode: options.portable ? "portable" : "auto",
+            mcpPackageSpec: options.package
         });
         console.log(`Installed AgentRoom MCP for ${result.client}: ${result.configPath}`);
     }
@@ -123,8 +127,15 @@ program
     .option("--config <path>", "custom JSON config path, resolved from the current project")
     .option("--scope <scope>", "project or custom", "project")
     .option("--portable", "write MCP config using npx -y @venture-ia/agentroom mcp")
+    .option("--package <spec>", "package spec used by generated npx MCP configs")
     .action(async (options) => {
-    const result = await installMcpConfig(process.cwd(), { client: "codex", configPath: options.config, scope: options.scope, mcpCommandMode: options.portable ? "portable" : "auto" });
+    const result = await installMcpConfig(process.cwd(), {
+        client: "codex",
+        configPath: options.config,
+        scope: options.scope,
+        mcpCommandMode: options.portable ? "portable" : "auto",
+        mcpPackageSpec: options.package
+    });
     console.log(`Installed AgentRoom MCP for Codex: ${result.configPath}`);
 });
 program
@@ -133,8 +144,15 @@ program
     .option("--config <path>", "custom JSON config path, resolved from the current project")
     .option("--scope <scope>", "project or custom", "project")
     .option("--portable", "write MCP config using npx -y @venture-ia/agentroom mcp")
+    .option("--package <spec>", "package spec used by generated npx MCP configs")
     .action(async (options) => {
-    const result = await installMcpConfig(process.cwd(), { client: "claude", configPath: options.config, scope: options.scope, mcpCommandMode: options.portable ? "portable" : "auto" });
+    const result = await installMcpConfig(process.cwd(), {
+        client: "claude",
+        configPath: options.config,
+        scope: options.scope,
+        mcpCommandMode: options.portable ? "portable" : "auto",
+        mcpPackageSpec: options.package
+    });
     console.log(`Installed AgentRoom MCP for Claude Code: ${result.configPath}`);
 });
 program

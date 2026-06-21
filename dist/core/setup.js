@@ -11,7 +11,7 @@ export async function setupAgentRoom(projectRoot = process.cwd(), input = {}) {
     if (remote) {
         const [project, state] = await Promise.all([remote.getCurrentProject(), remote.getState()]);
         const store = new AgentRoomStore(projectRoot, { roomDir: getProjectAgentRoomDir(projectRoot) });
-        const files = await writeIntegrationFiles(store, project, input.mcpCommandMode);
+        const files = await writeIntegrationFiles(store, project, input.mcpCommandMode, input.mcpPackageSpec);
         return {
             store,
             project,
@@ -24,7 +24,7 @@ export async function setupAgentRoom(projectRoot = process.cwd(), input = {}) {
     const created = existingRoom
         ? await setupLinkedProject(projectRoot, input)
         : await AgentRoomStore.createSharedRoom(projectRoot, input);
-    const files = await writeIntegrationFiles(created.store, created.project, input.mcpCommandMode);
+    const files = await writeIntegrationFiles(created.store, created.project, input.mcpCommandMode, input.mcpPackageSpec);
     return {
         store: created.store,
         project: created.project,
@@ -39,10 +39,10 @@ async function setupLinkedProject(projectRoot, input) {
     const room = await store.initialize();
     return { store, project, room };
 }
-async function writeIntegrationFiles(store, project, mcpCommandMode = "auto") {
+async function writeIntegrationFiles(store, project, mcpCommandMode = "auto", mcpPackageSpec) {
     const integrationsDir = path.join(store.projectAgentRoomDir, "integrations");
     await ensureSafeDirectory(integrationsDir);
-    const mcpCommand = await resolveMcpCommand(mcpCommandMode);
+    const mcpCommand = await resolveMcpCommand(mcpCommandMode, mcpPackageSpec);
     const mcpServer = {
         command: mcpCommand.command,
         args: [...mcpCommand.args, "mcp"],
@@ -60,9 +60,9 @@ async function writeIntegrationFiles(store, project, mcpCommandMode = "auto") {
     await writeTextFile(agentGuide, renderAgentGuide(project));
     return { permissions, agentGuide, codexMcp, claudeMcp };
 }
-async function resolveMcpCommand(mode = "auto") {
+async function resolveMcpCommand(mode = "auto", mcpPackageSpec) {
     if (mode === "portable") {
-        return portableMcpCommand();
+        return portableMcpCommand(mcpPackageSpec);
     }
     const modulePath = fileURLToPath(import.meta.url);
     const sourceRoot = path.resolve(path.dirname(modulePath), "..", "..");
@@ -86,8 +86,29 @@ async function resolveMcpCommand(mode = "auto") {
     }
     return { command: process.execPath, args: [path.join(packageRoot, "dist", "cli.js")] };
 }
-function portableMcpCommand() {
-    return { command: "npx", args: ["-y", "@venture-ia/agentroom"] };
+function portableMcpCommand(mcpPackageSpec) {
+    return { command: "npx", args: ["-y", resolvePortablePackageSpec(mcpPackageSpec)] };
+}
+function resolvePortablePackageSpec(explicitPackageSpec) {
+    const explicit = explicitPackageSpec?.trim();
+    if (explicit)
+        return explicit;
+    const envSpec = process.env.AGENTROOM_NPX_PACKAGE?.trim();
+    if (envSpec)
+        return envSpec;
+    const npmExecSpec = process.env.npm_config_package?.trim();
+    if (npmExecSpec && isReusableNpxPackageSpec(npmExecSpec))
+        return npmExecSpec;
+    return "@venture-ia/agentroom";
+}
+function isReusableNpxPackageSpec(spec) {
+    return (spec === "@venture-ia/agentroom" ||
+        spec.startsWith("github:") ||
+        spec.startsWith("git+") ||
+        spec.startsWith("http://") ||
+        spec.startsWith("https://") ||
+        spec.startsWith("file:") ||
+        spec.endsWith(".tgz"));
 }
 async function isExistingPathInside(candidate, root) {
     try {

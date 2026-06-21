@@ -14,6 +14,7 @@ export type SetupInput = {
   agentKind?: string;
   humanOwner?: string;
   mcpCommandMode?: "auto" | "portable";
+  mcpPackageSpec?: string;
 };
 
 export type AgentRoomSetup = {
@@ -34,7 +35,7 @@ export async function setupAgentRoom(projectRoot = process.cwd(), input: SetupIn
   if (remote) {
     const [project, state] = await Promise.all([remote.getCurrentProject(), remote.getState()]);
     const store = new AgentRoomStore(projectRoot, { roomDir: getProjectAgentRoomDir(projectRoot) });
-    const files = await writeIntegrationFiles(store, project, input.mcpCommandMode);
+    const files = await writeIntegrationFiles(store, project, input.mcpCommandMode, input.mcpPackageSpec);
     return {
       store,
       project,
@@ -49,7 +50,7 @@ export async function setupAgentRoom(projectRoot = process.cwd(), input: SetupIn
     ? await setupLinkedProject(projectRoot, input)
     : await AgentRoomStore.createSharedRoom(projectRoot, input);
 
-  const files = await writeIntegrationFiles(created.store, created.project, input.mcpCommandMode);
+  const files = await writeIntegrationFiles(created.store, created.project, input.mcpCommandMode, input.mcpPackageSpec);
 
   return {
     store: created.store,
@@ -67,11 +68,16 @@ async function setupLinkedProject(projectRoot: string, input: SetupInput) {
   return { store, project, room };
 }
 
-async function writeIntegrationFiles(store: AgentRoomStore, project: Project, mcpCommandMode: SetupInput["mcpCommandMode"] = "auto"): Promise<AgentRoomSetup["files"]> {
+async function writeIntegrationFiles(
+  store: AgentRoomStore,
+  project: Project,
+  mcpCommandMode: SetupInput["mcpCommandMode"] = "auto",
+  mcpPackageSpec?: string
+): Promise<AgentRoomSetup["files"]> {
   const integrationsDir = path.join(store.projectAgentRoomDir, "integrations");
   await ensureSafeDirectory(integrationsDir);
 
-  const mcpCommand = await resolveMcpCommand(mcpCommandMode);
+  const mcpCommand = await resolveMcpCommand(mcpCommandMode, mcpPackageSpec);
   const mcpServer = {
     command: mcpCommand.command,
     args: [...mcpCommand.args, "mcp"],
@@ -93,9 +99,12 @@ async function writeIntegrationFiles(store: AgentRoomStore, project: Project, mc
   return { permissions, agentGuide, codexMcp, claudeMcp };
 }
 
-async function resolveMcpCommand(mode: SetupInput["mcpCommandMode"] = "auto"): Promise<{ command: string; args: string[] }> {
+async function resolveMcpCommand(
+  mode: SetupInput["mcpCommandMode"] = "auto",
+  mcpPackageSpec?: string
+): Promise<{ command: string; args: string[] }> {
   if (mode === "portable") {
-    return portableMcpCommand();
+    return portableMcpCommand(mcpPackageSpec);
   }
 
   const modulePath = fileURLToPath(import.meta.url);
@@ -122,8 +131,33 @@ async function resolveMcpCommand(mode: SetupInput["mcpCommandMode"] = "auto"): P
   return { command: process.execPath, args: [path.join(packageRoot, "dist", "cli.js")] };
 }
 
-function portableMcpCommand(): { command: string; args: string[] } {
-  return { command: "npx", args: ["-y", "@venture-ia/agentroom"] };
+function portableMcpCommand(mcpPackageSpec?: string): { command: string; args: string[] } {
+  return { command: "npx", args: ["-y", resolvePortablePackageSpec(mcpPackageSpec)] };
+}
+
+function resolvePortablePackageSpec(explicitPackageSpec?: string): string {
+  const explicit = explicitPackageSpec?.trim();
+  if (explicit) return explicit;
+
+  const envSpec = process.env.AGENTROOM_NPX_PACKAGE?.trim();
+  if (envSpec) return envSpec;
+
+  const npmExecSpec = process.env.npm_config_package?.trim();
+  if (npmExecSpec && isReusableNpxPackageSpec(npmExecSpec)) return npmExecSpec;
+
+  return "@venture-ia/agentroom";
+}
+
+function isReusableNpxPackageSpec(spec: string): boolean {
+  return (
+    spec === "@venture-ia/agentroom" ||
+    spec.startsWith("github:") ||
+    spec.startsWith("git+") ||
+    spec.startsWith("http://") ||
+    spec.startsWith("https://") ||
+    spec.startsWith("file:") ||
+    spec.endsWith(".tgz")
+  );
 }
 
 async function isExistingPathInside(candidate: string, root: string): Promise<boolean> {
