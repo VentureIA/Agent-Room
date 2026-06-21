@@ -57,6 +57,9 @@ export async function startHostedRelay(options: HostedRelayOptions = {}): Promis
   app.use(express.json({ limit: "1mb" }));
 
   app.get("/healthz", (_req, res) => res.json({ ok: true, service: "agentroom-relay" }));
+  app.get("/install.sh", (_req, res) => {
+    res.type("text/x-shellscript").send(renderInstallScript());
+  });
 
   app.get("/dashboard/:inviteCode", async (req, res, next) => {
     try {
@@ -597,6 +600,43 @@ async function sendDashboardUi(res: express.Response): Promise<void> {
 
 function renderDashboardMessage(title: string, message: string): string {
   return `<main style="font-family: sans-serif; max-width: 720px; margin: 64px auto; line-height: 1.5"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></main>`;
+}
+
+function renderInstallScript(): string {
+  return `${[
+    "#!/bin/sh",
+    "set -eu",
+    "",
+    'client="${1:-${AGENTROOM_CLIENT:-all}}"',
+    'project_name="${2:-${AGENTROOM_NAME:-$(basename "$PWD")}}"',
+    'package_spec="${AGENTROOM_PACKAGE:-github:VentureIA/Agent-Room#main}"',
+    'mcp_package_spec="${AGENTROOM_MCP_PACKAGE:-github:VentureIA/Agent-Room#main}"',
+    "",
+    'case "$client" in',
+    "  all|claude|codex) ;;",
+    "  *)",
+    '    echo "AgentRoom install error: client must be all, claude, or codex." >&2',
+    '    echo "Example: curl -fsSL https://agent-room.venture-ia.com/install.sh | sh -s -- claude MyProject" >&2',
+    "    exit 1",
+    "    ;;",
+    "esac",
+    "",
+    "if ! command -v node >/dev/null 2>&1; then",
+    '  echo "AgentRoom install error: Node.js >=20.11 is required." >&2',
+    '  echo "Install Node.js first, then run this command again." >&2',
+    "  exit 1",
+    "fi",
+    "",
+    "if ! command -v npm >/dev/null 2>&1; then",
+    '  echo "AgentRoom install error: npm is required." >&2',
+    '  echo "Install npm first, then run this command again." >&2',
+    "  exit 1",
+    "fi",
+    "",
+    'echo "Installing AgentRoom for $project_name ($client)..."',
+    'npx -y "$package_spec" init "$client" --name "$project_name" --package "$mcp_package_spec"',
+    'echo "AgentRoom install complete."'
+  ].join("\n")}\n`;
 }
 
 function escapeHtml(value: string): string {

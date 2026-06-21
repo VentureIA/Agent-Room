@@ -90,14 +90,14 @@ describe("setupAgentRoom", () => {
         client: "claude",
         name: "Install Demo",
         mcpCommandMode: "portable",
-        mcpPackageSpec: "@venture-ia/agentroom"
+        mcpPackageSpec: "agentroom"
       });
       const npmConfig = JSON.parse(await readFile(npmPortable.configPath, "utf8")) as {
         mcpServers: { agentroom: { command: string; args: string[]; cwd: string } };
       };
       expect(npmConfig.mcpServers.agentroom).toMatchObject({
         command: "npx",
-        args: ["-y", "@venture-ia/agentroom", "mcp"],
+        args: ["-y", "agentroom", "mcp"],
         cwd: project
       });
 

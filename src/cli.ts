@@ -101,7 +101,7 @@ program
   .option("--role <role>", "project role")
   .option("--agent <agentKind>", "primary agent kind", "Codex")
   .option("--owner <humanOwner>", "human owner", "Human owner")
-  .option("--portable", "write MCP config using npx -y @venture-ia/agentroom mcp")
+  .option("--portable", "write MCP config using npx -y agentroom mcp")
   .option("--package <spec>", "package spec used by generated npx MCP configs")
   .action(async (client: string, options) => {
     if (client !== "codex" && client !== "claude" && client !== "all") {
@@ -132,7 +132,7 @@ program
   .description("Install AgentRoom MCP into the project-local Codex config.")
   .option("--config <path>", "custom JSON config path, resolved from the current project")
   .option("--scope <scope>", "project or custom", "project")
-  .option("--portable", "write MCP config using npx -y @venture-ia/agentroom mcp")
+  .option("--portable", "write MCP config using npx -y agentroom mcp")
   .option("--package <spec>", "package spec used by generated npx MCP configs")
   .action(async (options) => {
     const result = await installMcpConfig(process.cwd(), {
@@ -150,7 +150,7 @@ program
   .description("Install AgentRoom MCP into the project-local Claude Code config.")
   .option("--config <path>", "custom JSON config path, resolved from the current project")
   .option("--scope <scope>", "project or custom", "project")
-  .option("--portable", "write MCP config using npx -y @venture-ia/agentroom mcp")
+  .option("--portable", "write MCP config using npx -y agentroom mcp")
   .option("--package <spec>", "package spec used by generated npx MCP configs")
   .action(async (options) => {
     const result = await installMcpConfig(process.cwd(), {

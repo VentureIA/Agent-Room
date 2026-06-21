@@ -46,6 +46,11 @@ describe("hosted relay", () => {
     servers.push(relay.server);
 
     try {
+      const installer = await fetch(`${relay.url}/install.sh`);
+      expect(installer.status).toBe(200);
+      expect(installer.headers.get("content-type")).toContain("text/x-shellscript");
+      expect(await installer.text()).toContain("github:VentureIA/Agent-Room#main");
+
       const connected = await runCli(
         projectA,
         { ...process.env, AGENTROOM_HOME: homeA, AGENTROOM_RELAY_ADMIN_TOKEN: "test-admin-token" },

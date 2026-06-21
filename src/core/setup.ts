@@ -150,6 +150,7 @@ function resolvePortablePackageSpec(explicitPackageSpec?: string): string {
 
 function isReusableNpxPackageSpec(spec: string): boolean {
   return (
+    spec === "agentroom" ||
     spec === "@venture-ia/agentroom" ||
     spec.startsWith("github:") ||
     spec.startsWith("git+") ||

@@ -102,7 +102,8 @@ function resolvePortablePackageSpec(explicitPackageSpec) {
     return "github:VentureIA/Agent-Room";
 }
 function isReusableNpxPackageSpec(spec) {
-    return (spec === "@venture-ia/agentroom" ||
+    return (spec === "agentroom" ||
+        spec === "@venture-ia/agentroom" ||
         spec.startsWith("github:") ||
         spec.startsWith("git+") ||
         spec.startsWith("http://") ||

@@ -1,5 +1,5 @@
 {
-  "name": "@venture-ia/agentroom",
+  "name": "agentroom",
   "version": "0.1.0",
   "description": "Local-first shared understanding layer for AI-coded projects.",
   "type": "module",
@@ -20,6 +20,7 @@
   },
   "files": [
     "dist",
+    "install.sh",
     "README.md",
     "agentroom-plan-complet.md"
   ],
