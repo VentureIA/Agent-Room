@@ -19,7 +19,7 @@ const execFileAsync = promisify(execFile);
 export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? process.cwd()): Promise<void> {
   const server = new McpServer({
     name: "agentroom",
-    version: "0.1.1"
+    version: "0.1.2"
   });
 
   const requireStore = () => AgentRoomStore.requireLinkedProject(root);

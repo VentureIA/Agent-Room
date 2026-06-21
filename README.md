@@ -124,18 +124,25 @@ Restart Claude Code or Codex after running `init`, then ask:
 Use AgentRoom. Start the session and connect this project.
 ```
 
-## Publish To npm
+## Quick Commands
 
-The repository is ready for a public scoped npm package. To publish the first
-release:
+Create a room or prepare the first project:
 
 ```bash
-npm login
-npm publish --access public
+npx -y agentroom-ai init
 ```
 
-After that, the `npx -y agentroom-ai init` command works from any project without
-cloning AgentRoom first.
+Join another project to the same room:
+
+```bash
+npx -y agentroom-ai join ar_XXXXXXX
+```
+
+Check whether the room and MCP client configs are ready:
+
+```bash
+npx -y agentroom-ai doctor
+```
 
 ## Install From GitHub
 
@@ -174,7 +181,6 @@ In the first project, create the shared room:
 ```bash
 cd /path/to/wordpress-project
 npx -y agentroom-ai init claude --name WordPress
-npx -y agentroom-ai connect --name WordPress --agent Claude
 ```
 
 The command prints an invite code like:
@@ -187,9 +193,11 @@ In the second project, join the room:
 
 ```bash
 cd /path/to/saas-project
-npx -y agentroom-ai init codex --name SaaS
 npx -y agentroom-ai join ar_XXXXXXX --name SaaS --agent Codex
 ```
+
+`join` also installs or repairs the local Claude/Codex MCP configs, so there is
+no separate MCP install step.
 
 List connected projects:
 
@@ -224,7 +232,7 @@ automatically. If not, the question remains open for an agent or human to handle
 The preferred workflow is to let the agent use AgentRoom through MCP, instead of
 typing AgentRoom commands manually in a terminal.
 
-From each project, install the local MCP config:
+From each project, install or repair the local MCP config:
 
 ```bash
 cd /path/to/project
@@ -500,7 +508,8 @@ Connect the current project to a new local shared room.
 agentroom join ar_XXXXXXX
 ```
 
-Join an existing local room with an invite code.
+Join an existing local room with an invite code and install project-local MCP
+configs automatically.
 
 ```bash
 agentroom install-mcp all

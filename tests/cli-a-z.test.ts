@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -32,8 +32,23 @@ describe("CLI connect/join A to Z", () => {
       const invite = connected.match(/Invite code: (ar_[A-Za-z0-9_-]+)/)?.[1];
       expect(invite).toBeDefined();
 
+      await writeFile(path.join(projectB, ".mcp.json"), `${JSON.stringify({ mcpServers: {} })}\n`, "utf8");
       const joined = await runCli(projectB, env, "join", invite!, "--name", "SaaS", "--agent", "Codex");
       expect(joined).toContain(`via ${invite}`);
+      expect(joined).toContain("Claude MCP: OK");
+      expect(joined).toContain("Codex MCP: OK");
+      const claudeMcp = JSON.parse(await readFile(path.join(projectB, ".mcp.json"), "utf8")) as {
+        mcpServers: { agentroom?: { command: string; args: string[] } };
+      };
+      const codexMcp = JSON.parse(await readFile(path.join(projectB, ".codex", "mcp.json"), "utf8")) as {
+        mcp_servers: { agentroom?: { command: string; args: string[] } };
+      };
+      expect(claudeMcp.mcpServers.agentroom).toMatchObject({ command: "npx", args: ["-y", "agentroom-ai", "mcp"] });
+      expect(codexMcp.mcp_servers.agentroom).toMatchObject({ command: "npx", args: ["-y", "agentroom-ai", "mcp"] });
+
+      const doctor = await runCli(projectB, env, "doctor");
+      expect(doctor).toContain("Claude MCP: OK");
+      expect(doctor).toContain("Codex MCP: OK");
 
       const projectsFromA = await runCli(projectA, env, "projects");
       const projectsFromB = await runCli(projectB, env, "projects");

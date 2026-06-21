@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import path from "node:path";
 import { Command } from "commander";
 import open from "open";
 import { processInboxAutonomously } from "./core/autonomous.js";
+import { readJson } from "./core/files.js";
 import { installMcpConfig } from "./core/install.js";
 import { setupAgentRoom } from "./core/setup.js";
 import { AgentRoomStore } from "./core/storage.js";
@@ -56,35 +58,8 @@ program
     .option("--local-command", "write MCP config pointing to this local checkout instead of npx")
     .option("--package <spec>", "package spec used by generated npx MCP configs")
     .action(async (client, options) => {
-    if (client !== "codex" && client !== "claude" && client !== "all") {
-        throw new Error("init client must be claude, codex, or all.");
-    }
-    const clients = client === "all" ? ["claude", "codex"] : [client];
-    const agentKind = options.agent ?? defaultAgentForClients(clients);
-    const results = [];
-    for (const target of clients) {
-        results.push(await installMcpConfig(process.cwd(), {
-            client: target,
-            name: options.name,
-            role: options.role,
-            agentKind,
-            humanOwner: options.owner,
-            mcpCommandMode: options.localCommand ? "auto" : "portable",
-            mcpPackageSpec: options.package
-        }));
-    }
-    const setup = results[0]?.setup;
-    if (!setup)
-        throw new Error("AgentRoom init did not install any MCP client.");
-    console.log(`AgentRoom initialized for ${setup.project.name}.`);
-    console.log(`Invite code: ${setup.room.inviteCode}`);
-    for (const result of results) {
-        console.log(`Installed ${result.client} MCP: ${result.configPath}`);
-    }
-    console.log(`Agent guide: ${setup.files.agentGuide}`);
-    console.log("");
-    console.log("Restart Claude/Codex, then ask:");
-    console.log("Use AgentRoom. Start the session and connect this project.");
+    const results = await installClients(parseMcpClients(client, "init"), options);
+    printReady("AgentRoom ready", results);
 });
 program
     .command("install-mcp")
@@ -200,10 +175,14 @@ program
     .option("--agent <agentKind>", "primary agent kind", "Codex")
     .option("--owner <humanOwner>", "human owner", "Human owner")
     .option("--relay <url>", "hosted AgentRoom relay URL")
+    .option("--client <client>", "claude, codex, or all", "all")
+    .option("--local-command", "write MCP config pointing to this local checkout instead of npx")
+    .option("--package <spec>", "package spec used by generated npx MCP configs")
     .action(async (inviteCode, options) => {
     if (!inviteCode) {
         throw new Error("Join requires an invite code, for example: agentroom join ar_ABC123");
     }
+    const clients = parseMcpClients(options.client, "join --client");
     if (options.relay) {
         const joined = await joinRemoteRoom(process.cwd(), options.relay, inviteCode, {
             name: options.name,
@@ -213,6 +192,8 @@ program
         });
         console.log(`Joined remote AgentRoom via ${inviteCode} as ${joined.project.name}.`);
         console.log(`Relay: ${joined.relayUrl}`);
+        const results = await installClients(clients, options);
+        printReady("AgentRoom ready", results);
         return;
     }
     const record = await findRoomByInvite(inviteCode);
@@ -227,6 +208,8 @@ program
     });
     console.log(`Joined ${room.name} via ${inviteCode} as ${project.name}.`);
     console.log(`Shared room: ${record.roomDir}`);
+    const results = await installClients(clients, options);
+    printReady("AgentRoom ready", results);
 });
 program
     .command("invite")
@@ -449,6 +432,7 @@ program
         console.log(`- Room: ${state.room.id}`);
         console.log(`- Project directory: ${process.cwd()}/.agentroom`);
         console.log(`- Projects connected: ${state.projects.length}`);
+        await printMcpDoctor(process.cwd());
         console.log("- Remote command execution: disabled");
         console.log("- Remote file edits: disabled");
         return;
@@ -461,6 +445,7 @@ program
     console.log(`- Project directory: ${store.projectAgentRoomDir}`);
     console.log(`- SQLite/event store: ready`);
     console.log(`- Projects connected: ${state.projects.length}`);
+    await printMcpDoctor(process.cwd());
     console.log("- Remote command execution: disabled");
     console.log("- Remote file edits: disabled");
 });
@@ -516,6 +501,83 @@ function defaultAgentForClients(clients) {
     if (clients.length === 1 && clients[0] === "codex")
         return "Codex";
     return "Codex";
+}
+function parseMcpClients(value, label) {
+    if (value !== "codex" && value !== "claude" && value !== "all") {
+        throw new Error(`${label} must be claude, codex, or all.`);
+    }
+    return value === "all" ? ["claude", "codex"] : [value];
+}
+async function installClients(clients, options) {
+    const agentKind = options.agent ?? defaultAgentForClients(clients);
+    const results = [];
+    for (const client of clients) {
+        results.push(await installMcpConfig(process.cwd(), {
+            client,
+            name: options.name,
+            role: options.role,
+            agentKind,
+            humanOwner: options.owner,
+            mcpCommandMode: options.localCommand ? "auto" : "portable",
+            mcpPackageSpec: options.package
+        }));
+    }
+    return results;
+}
+function printReady(heading, results) {
+    const setup = results[0]?.setup;
+    if (!setup)
+        throw new Error("AgentRoom did not install any MCP client.");
+    console.log(`${heading} for ${setup.project.name}.`);
+    console.log(`Invite code: ${setup.room.inviteCode}`);
+    console.log(`Projects can join with: npx -y agentroom-ai join ${setup.room.inviteCode}`);
+    for (const result of results) {
+        console.log(`${labelMcpClient(result.client)} MCP: OK (${result.configPath})`);
+    }
+    console.log(`Agent guide: ${setup.files.agentGuide}`);
+    console.log("");
+    console.log("Restart Claude/Codex, then ask:");
+    console.log("Use AgentRoom. Start the session and show connected projects.");
+}
+function labelMcpClient(client) {
+    return client === "claude" ? "Claude" : "Codex";
+}
+async function printMcpDoctor(projectRoot) {
+    const statuses = await Promise.all([
+        readMcpStatus(projectRoot, "claude", path.join(projectRoot, ".mcp.json"), "mcpServers"),
+        readMcpStatus(projectRoot, "codex", path.join(projectRoot, ".codex", "mcp.json"), "mcp_servers")
+    ]);
+    for (const status of statuses) {
+        console.log(`- ${labelMcpClient(status.client)} MCP: ${status.ok ? "OK" : "MISSING"} (${status.detail})`);
+    }
+    if (statuses.some((status) => !status.ok)) {
+        console.log("- Fix MCP: run `npx -y agentroom-ai init` or `npx -y agentroom-ai join <invite>` from this project, then restart Claude/Codex.");
+    }
+}
+async function readMcpStatus(projectRoot, client, configPath, key) {
+    const displayPath = path.relative(projectRoot, configPath) || configPath;
+    try {
+        const config = await readJson(configPath);
+        if (!config)
+            return { client, ok: false, detail: `${displayPath} not found` };
+        const servers = config[key];
+        if (!isJsonObject(servers))
+            return { client, ok: false, detail: `${displayPath} has no ${key}.agentroom` };
+        const agentroom = servers.agentroom;
+        if (!isJsonObject(agentroom))
+            return { client, ok: false, detail: `${displayPath} has no ${key}.agentroom` };
+        if (typeof agentroom.command !== "string" || !Array.isArray(agentroom.args)) {
+            return { client, ok: false, detail: `${displayPath} has malformed ${key}.agentroom` };
+        }
+        return { client, ok: true, detail: displayPath };
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : "invalid JSON";
+        return { client, ok: false, detail: `${displayPath}: ${message}` };
+    }
+}
+function isJsonObject(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function printInbox(state, currentProjectId) {
     const openQuestions = state.questions.filter((question) => question.status === "open" && question.toProjectId === currentProjectId);

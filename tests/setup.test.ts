@@ -135,24 +135,34 @@ describe("setupAgentRoom", () => {
     }
   });
 
-  it("initializes a project and installs portable MCP config with one CLI command", async () => {
+  it("initializes a project and installs portable MCP configs with one CLI command", async () => {
     const sandbox = await mkdtemp(path.join(os.tmpdir(), "agentroom-init-"));
     const project = path.join(sandbox, "project");
     const home = path.join(sandbox, "home");
     try {
       await writePackage(project, "init-demo");
-      const { stdout } = await execFileAsync(process.execPath, [tsxCli, cliPath, "init", "claude", "--name", "Init Demo"], {
+      const { stdout } = await execFileAsync(process.execPath, [tsxCli, cliPath, "init", "--name", "Init Demo"], {
         cwd: project,
         env: { ...process.env, AGENTROOM_HOME: home }
       });
 
-      expect(stdout).toContain("AgentRoom initialized for Init Demo.");
-      expect(stdout).toContain("Installed claude MCP");
+      expect(stdout).toContain("AgentRoom ready for Init Demo.");
+      expect(stdout).toContain("Claude MCP: OK");
+      expect(stdout).toContain("Codex MCP: OK");
       const claudeConfig = JSON.parse(await readFile(path.join(project, ".mcp.json"), "utf8")) as {
         mcpServers: { agentroom: { command: string; args: string[]; cwd: string; env: { AGENTROOM_PROJECT_ROOT: string } } };
       };
+      const codexConfig = JSON.parse(await readFile(path.join(project, ".codex", "mcp.json"), "utf8")) as {
+        mcp_servers: { agentroom: { command: string; args: string[]; cwd: string; env: { AGENTROOM_PROJECT_ROOT: string } } };
+      };
       const realProject = await realpath(project);
       expect(claudeConfig.mcpServers.agentroom).toMatchObject({
+        command: "npx",
+        args: ["-y", "agentroom-ai", "mcp"],
+        cwd: realProject,
+        env: { AGENTROOM_PROJECT_ROOT: realProject }
+      });
+      expect(codexConfig.mcp_servers.agentroom).toMatchObject({
         command: "npx",
         args: ["-y", "agentroom-ai", "mcp"],
         cwd: realProject,
