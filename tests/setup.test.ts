@@ -146,7 +146,8 @@ describe("setupAgentRoom", () => {
         env: { ...process.env, AGENTROOM_HOME: home }
       });
 
-      expect(stdout).toContain("A G E N T R O O M");
+      expect(stdout).toContain("AGENTROOM");
+      expect(stdout).toContain("AgentRoom.room");
       expect(stdout).toContain("BOOT ROOM");
       expect(stdout).toContain("AgentRoom ready for Init Demo.");
       expect(stdout).toContain("Claude MCP: OK");

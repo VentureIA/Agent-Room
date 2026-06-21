@@ -34,7 +34,8 @@ describe("CLI connect/join A to Z", () => {
 
       await writeFile(path.join(projectB, ".mcp.json"), `${JSON.stringify({ mcpServers: {} })}\n`, "utf8");
       const joined = await runCli(projectB, env, "join", invite!, "--name", "SaaS", "--agent", "Codex");
-      expect(joined).toContain("A G E N T R O O M");
+      expect(joined).toContain("AGENTROOM");
+      expect(joined).toContain("AgentRoom.room");
       expect(joined).toContain("JOIN ROOM");
       expect(joined).toContain(`via ${invite}`);
       expect(joined).toContain("Claude MCP: OK");

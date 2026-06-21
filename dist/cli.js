@@ -528,18 +528,31 @@ async function installClients(clients, options) {
 }
 function printPixelBanner(mode) {
     const action = mode === "init" ? "BOOT ROOM" : "JOIN ROOM";
+    const lines = [
+        "+----------------+---+----------------+--------------------------------------+",
+        "| NOTES       x  | > | AGENTROOM   o  | AgentRoom.room                       |",
+        "+----------------+---+----------------+--------------------------------------+",
+        "|                                                                            |",
+        "|    AAAAA   GGGG   EEEEE  N   N  TTTTT  RRRR    OOO    OOO   M   M          |",
+        "|   A     A G       E      NN  N    T    R   R  O   O  O   O  MM MM          |",
+        "|   AAAAAAA G  GGG  EEEE   N N N    T    RRRR   O   O  O   O  M M M          |",
+        "|   A     A G    G  E      N  NN    T    R  R   O   O  O   O  M   M          |",
+        "|   A     A  GGGG   EEEEE  N   N    T    R   R   OOO    OOO   M   M          |",
+        "|                                                                            |",
+        "+----------------------------------------------------------------------------+",
+        "| MODE: " + action.padEnd(9, " ") + " | MCP: CLAUDE + CODEX | Q/A: AUTO | FILE ALERTS: ON        |",
+        "| [project] <---------------- AgentRoom ----------------> [project]          |",
+        "+----------------------------------------------------------------------------+"
+    ];
+    const color = shouldColorizeBanner() ? "\x1b[38;2;60;252;120m" : "";
+    const reset = color ? "\x1b[0m" : "";
     console.log("");
-    console.log("  +------------------------------------------------+");
-    console.log("  |  ##   ##  ######  ######  ##   ##  ######     |");
-    console.log("  |  ##   ##  ##      ##      ###  ##    ##       |");
-    console.log("  |  #######  ####    ####    ## # ##    ##       |");
-    console.log("  |  ##   ##  ##      ##      ##  ###    ##       |");
-    console.log("  |  ##   ##  ######  ######  ##   ##    ##       |");
-    console.log("  |                                                |");
-    console.log("  |  A G E N T R O O M   ::   " + action.padEnd(9, " ") + "           |");
-    console.log("  |  [project] <---- questions ----> [project]     |");
-    console.log("  +------------------------------------------------+");
+    for (const line of lines)
+        console.log(`${color}${line}${reset}`);
     console.log("");
+}
+function shouldColorizeBanner() {
+    return Boolean(process.stdout.isTTY && !process.env.NO_COLOR && !process.env.CI);
 }
 function printReady(heading, results) {
     const setup = results[0]?.setup;
