@@ -277,6 +277,7 @@ Useful MCP tools exposed by AgentRoom:
 - `get_status`
 - `open_dashboard`
 - `start_agent_session`
+- `coordinate_task_context`
 - `list_projects`
 - `get_invite_code`
 - `summarize_room`
@@ -301,19 +302,33 @@ Useful MCP tools exposed by AgentRoom:
 ## How Autonomous Agent Coordination Works
 
 AgentRoom does not make agents magical. It gives them a shared protocol.
+In the agent interface, `ask_question` is direct by default: AgentRoom records
+the question, immediately tries to process the target project's visible local
+context, and returns the answer inline when evidence is available. The inbox is
+only the fallback path when the target project is remote, offline, or lacks
+enough visible evidence.
+
+For day-to-day work, agents should call `coordinate_task_context` before
+starting any non-trivial task. That tool processes incoming questions, inspects
+the connected projects, automatically asks relevant context questions, and
+returns direct answers inline when possible. The human does not need to say
+"ask AgentRoom" first.
 
 Typical flow:
 
 1. Project A publishes its visible project card, contracts, or decisions.
-2. Project B asks a structured question through AgentRoom.
-3. Project A's agent reads its inbox through MCP.
-4. AgentRoom checks files allowed by `.agentroom/permissions.md`.
-5. If the answer is supported by visible files, the agent records the answer.
-6. If access is missing, the agent creates an access request.
-7. Before editing a file, the agent calls `check_file_before_edit`.
-8. If another connected project has touched the same file, the agent asks the
+2. Project B receives a user task and calls `coordinate_task_context`.
+3. AgentRoom processes Project B's incoming inbox automatically.
+4. AgentRoom asks Project A for any context needed by the task.
+5. AgentRoom tries to answer immediately from Project A's visible files.
+6. If it cannot, Project A's agent reads its inbox through MCP later.
+7. AgentRoom checks files allowed by `.agentroom/permissions.md`.
+8. If the answer is supported by visible files, the agent records the answer.
+9. If access is missing, the agent creates an access request.
+10. Before editing a file, the agent calls `check_file_before_edit`.
+11. If another connected project has touched the same file, the agent asks the
    human yes/no inside Codex or Claude Code before continuing.
-9. The human approves or rejects sensitive changes in the dashboard.
+12. The human approves or rejects sensitive changes in the dashboard.
 
 This keeps the human out of repetitive relay work while keeping sensitive access
 and decisions visible.

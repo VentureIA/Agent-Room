@@ -25,7 +25,7 @@ describe("setupAgentRoom", () => {
       const setup = await setupAgentRoom(project, { name: "Setup Demo", agentKind: "Codex" });
 
       await expect(readFile(setup.files.permissions, "utf8")).resolves.toContain("## Visible");
-      await expect(readFile(setup.files.agentGuide, "utf8")).resolves.toContain("process_inbox");
+      await expect(readFile(setup.files.agentGuide, "utf8")).resolves.toContain("coordinate_task_context");
 
       const codexConfig = JSON.parse(await readFile(setup.files.codexMcp, "utf8")) as {
         mcp_servers: { agentroom: { command: string; args: string[]; cwd: string } };

@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { processInboxAutonomously } from "../src/core/autonomous.js";
+import { processInboxAutonomously, resolveQuestionForLocalProject } from "../src/core/autonomous.js";
 import { AgentRoomStore } from "../src/core/storage.js";
 
 describe("AgentRoomStore", () => {
@@ -85,6 +85,47 @@ describe("AgentRoomStore", () => {
           confidence: "medium"
         })
       ).rejects.toThrow(/cannot answer/);
+    } finally {
+      await rm(rootA, { recursive: true, force: true });
+      await rm(rootB, { recursive: true, force: true });
+    }
+  });
+
+  it("directly resolves a question from a local target project when evidence is visible", async () => {
+    const rootA = await mkdtemp(path.join(os.tmpdir(), "agentroom-direct-a-"));
+    const rootB = await mkdtemp(path.join(os.tmpdir(), "agentroom-direct-b-"));
+    try {
+      await writeFile(
+        path.join(rootA, "README.md"),
+        "# Provider\n\nProvider exposes case studies to the SaaS importer.\n",
+        "utf8"
+      );
+      const storeA = new AgentRoomStore(rootA);
+      const projectA = await storeA.connectProject({ name: "Provider" });
+      const storeB = new AgentRoomStore(rootB, { roomDir: storeA.roomDir });
+      const projectB = await storeB.connectProject({ name: "Consumer" });
+      const question = await storeB.askQuestion({
+        fromProjectId: projectB.id,
+        toProjectId: projectA.id,
+        topic: "project.summary",
+        question: "Summarize this project for coordination.",
+        impact: "The consumer needs context before integrating.",
+        urgency: "normal"
+      });
+
+      const direct = await resolveQuestionForLocalProject(storeB, question, projectA);
+
+      expect(direct.status).toBe("answered");
+      expect(direct).toMatchObject({
+        questionId: question.id,
+        source: "local-project"
+      });
+      if (direct.status === "answered") {
+        expect(direct.answer).toContain("Provider exposes case studies");
+        expect(direct.evidenceFiles).toContain("README.md");
+      }
+      const state = await storeB.getState();
+      expect(state.questions.find((item) => item.id === question.id)).toMatchObject({ status: "answered" });
     } finally {
       await rm(rootA, { recursive: true, force: true });
       await rm(rootB, { recursive: true, force: true });

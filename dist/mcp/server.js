@@ -4,7 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import open from "open";
 import { z } from "zod";
-import { processInboxAutonomously } from "../core/autonomous.js";
+import { processInboxAutonomously, resolveQuestionForLocalProject } from "../core/autonomous.js";
 import { installMcpConfig } from "../core/install.js";
 import { findRoomByInvite, readProjectLink } from "../core/registry.js";
 import { connectRemoteRoom, joinRemoteRoom, RemoteAgentRoomClient } from "../core/remote.js";
@@ -15,11 +15,52 @@ const execFileAsync = promisify(execFile);
 export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? process.cwd()) {
     const server = new McpServer({
         name: "agentroom",
-        version: "0.1.2"
+        version: "0.1.3"
     });
     const requireStore = () => AgentRoomStore.requireLinkedProject(root);
     const requireClient = async () => (await RemoteAgentRoomClient.forLinkedProject(root)) ?? (await AgentRoomStore.requireLinkedProject(root));
     let dashboardRelay;
+    const askWithDirectResolution = async (store, currentProject, toProject, input) => {
+        const question = store instanceof RemoteAgentRoomClient
+            ? await store.askQuestion({
+                toProjectId: toProject.id,
+                topic: input.topic,
+                question: input.question,
+                impact: input.impact,
+                urgency: input.urgency
+            })
+            : await store.askQuestion({
+                fromProjectId: currentProject.id,
+                toProjectId: toProject.id,
+                topic: input.topic,
+                question: input.question,
+                impact: input.impact,
+                urgency: input.urgency
+            });
+        if (input.direct === false || store instanceof RemoteAgentRoomClient) {
+            return {
+                question,
+                directAnswer: {
+                    status: "pending",
+                    reason: store instanceof RemoteAgentRoomClient
+                        ? "Remote rooms need the target project agent or a relay-side worker to answer asynchronously."
+                        : "Direct resolution was disabled for this question."
+                }
+            };
+        }
+        const directAnswer = await resolveQuestionForLocalProject(store, question, toProject, { maxFiles: input.maxFiles ?? 50 });
+        return {
+            question: directAnswer.status === "answered"
+                ? {
+                    ...question,
+                    status: "answered",
+                    answer: directAnswer.answer,
+                    confidence: directAnswer.confidence
+                }
+                : question,
+            directAnswer
+        };
+    };
     registerAgentRoomPrompts(server);
     server.registerTool("setup_project", {
         title: "Setup AgentRoom Project",
@@ -210,6 +251,78 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
             processed
         }, null, 2));
     });
+    server.registerTool("coordinate_task_context", {
+        title: "Coordinate Task Context",
+        description: "Before doing a task, autonomously process this project's inbox, inspect connected projects, ask needed context questions, and return direct answers when available. Use this proactively; do not wait for the human to request AgentRoom.",
+        inputSchema: {
+            goal: z.string(),
+            autoAsk: z.boolean().default(true),
+            includeProjectSummaries: z.boolean().default(true),
+            maxProjects: z.number().int().positive().max(10).default(4),
+            maxQuestions: z.number().int().positive().max(20).default(5),
+            maxFiles: z.number().int().positive().max(200).default(50)
+        }
+    }, async (input) => {
+        const store = await requireClient();
+        const currentProject = await store.getCurrentProject();
+        const processed = store instanceof RemoteAgentRoomClient
+            ? await store.processInboxAutonomously({ maxQuestions: input.maxQuestions, maxFiles: input.maxFiles })
+            : await processInboxAutonomously(store, { maxQuestions: input.maxQuestions, maxFiles: input.maxFiles });
+        const state = await store.getState();
+        const otherProjects = selectCoordinationTargets(state.projects, currentProject, input.goal, input.maxProjects);
+        const shouldAsk = input.autoAsk && input.includeProjectSummaries && shouldAutoAskForContext(input.goal, otherProjects);
+        const contextQuestions = [];
+        if (shouldAsk) {
+            for (const project of otherProjects) {
+                const questionText = buildTaskContextQuestion(input.goal, project);
+                const existing = findExistingContextQuestion(state.questions, currentProject.id, project.id, questionText);
+                if (existing) {
+                    contextQuestions.push({
+                        project: projectSummary(project),
+                        question: existing,
+                        directAnswer: existing.status === "answered"
+                            ? {
+                                status: "answered",
+                                questionId: existing.id,
+                                answer: existing.answer,
+                                confidence: existing.confidence ?? "medium",
+                                source: "existing-question"
+                            }
+                            : {
+                                status: "pending",
+                                questionId: existing.id,
+                                reason: "A matching question is already open."
+                            },
+                        reusedExistingAnswer: true
+                    });
+                    continue;
+                }
+                const asked = await askWithDirectResolution(store, currentProject, project, {
+                    topic: "task.context",
+                    question: questionText,
+                    impact: `The current task may depend on ${project.name}'s context.`,
+                    urgency: "normal",
+                    direct: true,
+                    maxFiles: input.maxFiles
+                });
+                contextQuestions.push({
+                    project: projectSummary(project),
+                    question: asked.question,
+                    directAnswer: asked.directAnswer,
+                    reusedExistingAnswer: false
+                });
+            }
+        }
+        return text(JSON.stringify({
+            currentProject,
+            goal: input.goal,
+            processedInbox: processed,
+            connectedProjects: state.projects.map(projectSummary),
+            autoAsked: shouldAsk,
+            contextQuestions,
+            instruction: "Use answered context immediately. If directAnswer.status is pending, continue only when the missing context is non-blocking; otherwise explain the blocker and what AgentRoom is waiting for. Keep using ask_question proactively whenever new cross-project uncertainty appears."
+        }, null, 2));
+    });
     server.registerTool("list_projects", {
         title: "List Projects",
         description: "List projects connected to the current AgentRoom.",
@@ -255,34 +368,27 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
     });
     server.registerTool("ask_question", {
         title: "Ask Question",
-        description: "Ask a structured project-to-project question.",
+        description: "Ask a structured project-to-project question. By default AgentRoom immediately tries to resolve local target-project questions and returns the answer inline when evidence is available.",
         inputSchema: {
             toProject: z.string(),
             topic: z.string(),
             question: z.string(),
             impact: z.string(),
-            urgency: z.enum(["low", "normal", "blocking"]).default("normal")
+            urgency: z.enum(["low", "normal", "blocking"]).default("normal"),
+            direct: z.boolean().default(true),
+            maxFiles: z.number().int().positive().max(200).default(50)
         }
     }, async (input) => {
         const store = await requireClient();
         const currentProject = await store.getCurrentProject();
         const toProject = await store.getProjectByReference(input.toProject);
-        return text(JSON.stringify(store instanceof RemoteAgentRoomClient
-            ? await store.askQuestion({
-                toProjectId: toProject.id,
-                topic: input.topic,
-                question: input.question,
-                impact: input.impact,
-                urgency: input.urgency
-            })
-            : await store.askQuestion({
-                fromProjectId: currentProject.id,
-                toProjectId: toProject.id,
-                topic: input.topic,
-                question: input.question,
-                impact: input.impact,
-                urgency: input.urgency
-            }), null, 2));
+        const result = await askWithDirectResolution(store, currentProject, toProject, input);
+        return text(JSON.stringify({
+            ...result,
+            instruction: result.directAnswer.status === "answered"
+                ? "Show this answer directly to the user now. Do not ask them to call read_inbox or process_inbox."
+                : "Tell the user the question is pending and explain the reason. Do not pretend the target project answered."
+        }, null, 2));
     });
     server.registerTool("answer_question", {
         title: "Answer Question",
@@ -530,19 +636,20 @@ Goal: ${goal ?? "No explicit goal provided."}
 
 Use the MCP tools in this order:
 1. Call setup_project if the project is not connected yet.
-2. Call start_agent_session with processInbox=true.
-3. If process_inbox answers anything, include the evidence in your working context.
-4. If blockers remain, call ask_question for the owning project.
-5. Before editing or creating a file, call check_file_before_edit. If it returns requiresUserConfirmation, ask the human yes/no in the native agent chat and wait before editing.
-6. Before touching shared contracts or sensitive permissions, create a proposed decision or request access.
-7. Do not ask the human to run terminal commands unless MCP setup itself is missing.`));
+2. Call coordinate_task_context with the user's goal before starting implementation, even if the human did not explicitly ask for AgentRoom.
+3. Use answered context immediately. If coordinate_task_context answered incoming inbox questions, include that evidence in your working context.
+4. If new cross-project uncertainty appears while working, call ask_question immediately. ask_question tries direct resolution by default; when it returns directAnswer.status="answered", show and use that answer inline instead of telling the user to open the inbox later.
+5. Only ask the human about AgentRoom when context is still blocking after automatic direct resolution and the target project is remote, offline, or lacks visible evidence.
+6. Before editing or creating a file, call check_file_before_edit. If it returns requiresUserConfirmation, ask the human yes/no in the native agent chat and wait before editing.
+7. Before touching shared contracts or sensitive permissions, create a proposed decision or request access.
+8. Do not ask the human to run terminal commands unless MCP setup itself is missing.`));
     server.registerPrompt("agentroom_resolve_blockers", {
         description: "Resolve open AgentRoom questions and blockers conservatively.",
         argsSchema: {}
     }, async () => promptText(`Resolve AgentRoom blockers for this project.
 
 Use read_inbox first. For each open question addressed to this project:
-- Use process_inbox for evidence-backed automatic answers.
+- Use process_inbox for evidence-backed automatic answers without waiting for the human.
 - If evidence is insufficient, inspect list_visible_files and read_allowed_file.
 - If required evidence is hidden or ask-first, call request_access.
 - Never answer from a guess. Leave the question open when the evidence is not strong enough.`));
@@ -562,6 +669,50 @@ Use list_projects and summarize_room. Draft the smallest contract that describes
     }, async () => promptText(`Review AgentRoom permissions for this project.
 
 Use read_permissions and list_visible_files. Identify files that should be visible, ask-first, hidden, or always redacted. Do not call update_permissions until the human explicitly approves the final markdown.`));
+}
+function selectCoordinationTargets(projects, currentProject, goal, maxProjects) {
+    const normalizedGoal = goal.toLowerCase();
+    return projects
+        .filter((project) => project.id !== currentProject.id)
+        .map((project) => ({
+        project,
+        score: (normalizedGoal.includes(project.name.toLowerCase()) ? 20 : 0) +
+            (project.stack.some((item) => normalizedGoal.includes(item.toLowerCase())) ? 8 : 0) +
+            (project.role && normalizedGoal.includes(project.role.toLowerCase()) ? 5 : 0)
+    }))
+        .sort((a, b) => b.score - a.score || a.project.name.localeCompare(b.project.name))
+        .slice(0, maxProjects)
+        .map((item) => item.project);
+}
+function shouldAutoAskForContext(goal, targets) {
+    if (targets.length === 0)
+        return false;
+    return /\b(api|auth|contract|schema|endpoint|webhook|import|sync|integration|connect|shared|provider|consumer|database|migration|deploy|wordpress|saas|context|contexte|intégration|integration|connecter|connecte|synchroniser|importer|résume|resume|objectif)\b/i.test(goal);
+}
+function buildTaskContextQuestion(goal, project) {
+    return [
+        `For this task: "${goal}"`,
+        `What should ${project.name} share with the current project?`,
+        "Answer with the relevant purpose, architecture, endpoints, schemas, contracts, webhooks, files, constraints, and risks. Cite visible evidence when possible."
+    ].join("\n");
+}
+function findExistingContextQuestion(questions, fromProjectId, toProjectId, questionText) {
+    return questions
+        .filter((question) => question.fromProjectId === fromProjectId &&
+        question.toProjectId === toProjectId &&
+        question.topic === "task.context" &&
+        question.question === questionText &&
+        question.status !== "closed")
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+}
+function projectSummary(project) {
+    return {
+        id: project.id,
+        name: project.name,
+        role: project.role,
+        stack: project.stack,
+        path: project.path
+    };
 }
 function promptText(value) {
     return {

@@ -133,9 +133,10 @@ At the start of each coding session:
 - Connect to the AgentRoom MCP server configured for this project.
 - If the project is not ready yet, call setup_project, join_room, or install_all_client_configs from MCP instead of asking the human for terminal commands.
 - Prefer the agentroom_start_session MCP prompt, or call start_agent_session directly.
-- Call summarize_room to understand connected projects, open questions, decisions, access requests, and contracts.
-- Call read_inbox, then process_inbox before starting integration work.
-- Use ask_question when another project owns missing context.
+- Before implementing a non-trivial user task, call coordinate_task_context with the user's goal even when the human did not explicitly mention AgentRoom.
+- Let coordinate_task_context process incoming questions, ask needed cross-project context questions, and use direct answers immediately.
+- If new missing context appears while working, call ask_question immediately; do not ask the human to relay the question.
+- Call summarize_room when you need a broader room overview of projects, open questions, decisions, access requests, and contracts.
 - Use read_permissions and propose_permissions_update to review visibility rules; do not write permission changes directly from an agent.
 - Use list_visible_files and read_allowed_file only for files allowed by .agentroom/permissions.md.
 - Use request_access instead of reading hidden or ask-first files directly.
