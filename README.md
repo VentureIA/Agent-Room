@@ -50,7 +50,7 @@ Implemented today:
 Not implemented yet:
 
 - full SaaS accounts/billing;
-- package publishing to npm;
+- npm package publishing and release automation;
 - external authentication beyond local launch tokens;
 - automatic code modification across projects.
 
@@ -60,6 +60,56 @@ Not implemented yet:
 - npm
 - Codex or Claude Code if you want to use the MCP workflow
 - macOS, Linux, or another environment that can run Node.js
+
+## One-Command Install
+
+The package is configured for npm as `@venture-ia/agentroom`. Once it is
+published, install AgentRoom in any project with:
+
+```bash
+npx -y @venture-ia/agentroom init
+```
+
+For a specific agent client:
+
+```bash
+npx -y @venture-ia/agentroom init claude
+npx -y @venture-ia/agentroom init codex
+npx -y @venture-ia/agentroom init all
+```
+
+This prepares `.agentroom/`, writes the agent guide, and installs the project MCP
+config:
+
+- Claude Code: `.mcp.json`
+- Codex: `.codex/mcp.json`
+
+The generated MCP config uses a portable command:
+
+```bash
+npx -y @venture-ia/agentroom mcp
+```
+
+Restart Claude Code or Codex after running `init`, then ask:
+
+```text
+Use AgentRoom. Start the session and connect this project.
+```
+
+Until the npm package is published, use the local GitHub checkout flow below.
+
+## Publish To npm
+
+The repository is ready for a public scoped npm package. To publish the first
+release:
+
+```bash
+npm login
+npm publish --access public
+```
+
+After that, the `npx -y @venture-ia/agentroom init` command works from any
+project without cloning AgentRoom first.
 
 ## Install From GitHub
 
@@ -97,7 +147,8 @@ In the first project, create the shared room:
 
 ```bash
 cd /path/to/wordpress-project
-node /path/to/Agent-Room/dist/cli.js setup --name WordPress --agent Claude
+npx -y @venture-ia/agentroom init claude --name WordPress
+npx -y @venture-ia/agentroom connect --name WordPress --agent Claude
 ```
 
 The command prints an invite code like:
@@ -110,21 +161,21 @@ In the second project, join the room:
 
 ```bash
 cd /path/to/saas-project
-node /path/to/Agent-Room/dist/cli.js join ar_XXXXXXX --name SaaS --agent Codex
-node /path/to/Agent-Room/dist/cli.js setup --name SaaS --agent Codex
+npx -y @venture-ia/agentroom init codex --name SaaS
+npx -y @venture-ia/agentroom join ar_XXXXXXX --name SaaS --agent Codex
 ```
 
 List connected projects:
 
 ```bash
-node /path/to/Agent-Room/dist/cli.js projects
+npx -y @venture-ia/agentroom projects
 ```
 
 Ask a question from the SaaS project to the WordPress project:
 
 ```bash
 cd /path/to/saas-project
-node /path/to/Agent-Room/dist/cli.js ask \
+npx -y @venture-ia/agentroom ask \
   --from SaaS \
   --to WordPress \
   --topic case_study.heroImage \
@@ -136,7 +187,7 @@ Process the WordPress inbox:
 
 ```bash
 cd /path/to/wordpress-project
-node /path/to/Agent-Room/dist/cli.js process-inbox
+npx -y @venture-ia/agentroom process-inbox
 ```
 
 If visible files contain enough evidence, AgentRoom records the answer
@@ -151,7 +202,7 @@ From each project, install the local MCP config:
 
 ```bash
 cd /path/to/project
-node /path/to/Agent-Room/dist/cli.js install-mcp all
+npx -y @venture-ia/agentroom init all
 ```
 
 This writes:
@@ -162,8 +213,8 @@ This writes:
 If your client expects a custom config path:
 
 ```bash
-node /path/to/Agent-Room/dist/cli.js install-codex --scope custom --config .codex/custom-mcp.json
-node /path/to/Agent-Room/dist/cli.js install-claude --scope custom --config .mcp.json
+npx -y @venture-ia/agentroom install-codex --portable --scope custom --config .codex/custom-mcp.json
+npx -y @venture-ia/agentroom install-claude --portable --scope custom --config .mcp.json
 ```
 
 Restart Codex or Claude Code after installing the MCP config. The agent should
@@ -385,12 +436,26 @@ Project-local MCP configs:
 
 ## CLI Reference
 
-The examples below use `agentroom` as the binary name. Until the package is
-published to npm or linked locally, replace `agentroom` with:
+The examples below use `agentroom` as the binary name. You can run the same
+commands through npm with:
+
+```bash
+npx -y @venture-ia/agentroom <command>
+```
+
+For local development before npm publishing, replace `agentroom` with:
 
 ```bash
 node /path/to/Agent-Room/dist/cli.js
 ```
+
+```bash
+agentroom init all
+agentroom init claude
+agentroom init codex
+```
+
+Prepare the current project and install project-local MCP config in one command.
 
 ```bash
 agentroom setup
@@ -418,6 +483,8 @@ agentroom install-mcp claude
 ```
 
 Install AgentRoom MCP configuration files for Codex and/or Claude Code.
+Use `--portable` when you want the generated MCP config to run
+`npx -y @venture-ia/agentroom mcp`.
 
 ```bash
 agentroom status

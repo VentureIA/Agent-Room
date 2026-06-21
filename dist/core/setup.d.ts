@@ -5,6 +5,7 @@ export type SetupInput = {
     role?: string;
     agentKind?: string;
     humanOwner?: string;
+    mcpCommandMode?: "auto" | "portable";
 };
 export type AgentRoomSetup = {
     store: AgentRoomStore;

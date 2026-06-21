@@ -1,9 +1,16 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { installMcpConfig } from "../src/core/install.js";
 import { setupAgentRoom } from "../src/core/setup.js";
+
+const execFileAsync = promisify(execFile);
+const repoRoot = path.resolve(import.meta.dirname, "..");
+const tsxCli = path.join(repoRoot, "node_modules", ".bin", "tsx");
+const cliPath = path.join(repoRoot, "src", "cli.ts");
 
 describe("setupAgentRoom", () => {
   it("creates project permissions and MCP integration files", async () => {
@@ -68,6 +75,16 @@ describe("setupAgentRoom", () => {
       expect(codexConfig.mcp_servers.agentroom.cwd).toBe(project);
       expect(claudeConfig.mcpServers.agentroom.cwd).toBe(project);
 
+      const portable = await installMcpConfig(project, { client: "claude", name: "Install Demo", mcpCommandMode: "portable" });
+      const portableConfig = JSON.parse(await readFile(portable.configPath, "utf8")) as {
+        mcpServers: { agentroom: { command: string; args: string[]; cwd: string } };
+      };
+      expect(portableConfig.mcpServers.agentroom).toMatchObject({
+        command: "npx",
+        args: ["-y", "@venture-ia/agentroom", "mcp"],
+        cwd: project
+      });
+
       await writeFile(path.join(project, ".codex", "mcp.json"), `${JSON.stringify({ keep: true, mcp_servers: { other: { command: "node" } } })}\n`, "utf8");
       await installMcpConfig(project, { client: "codex", name: "Install Demo" });
       const mergedConfig = JSON.parse(await readFile(codex.configPath, "utf8")) as {
@@ -85,6 +102,35 @@ describe("setupAgentRoom", () => {
     } finally {
       if (previousHome === undefined) delete process.env.AGENTROOM_HOME;
       else process.env.AGENTROOM_HOME = previousHome;
+      await rm(sandbox, { recursive: true, force: true });
+    }
+  });
+
+  it("initializes a project and installs portable MCP config with one CLI command", async () => {
+    const sandbox = await mkdtemp(path.join(os.tmpdir(), "agentroom-init-"));
+    const project = path.join(sandbox, "project");
+    const home = path.join(sandbox, "home");
+    try {
+      await writePackage(project, "init-demo");
+      const { stdout } = await execFileAsync(process.execPath, [tsxCli, cliPath, "init", "claude", "--name", "Init Demo"], {
+        cwd: project,
+        env: { ...process.env, AGENTROOM_HOME: home }
+      });
+
+      expect(stdout).toContain("AgentRoom initialized for Init Demo.");
+      expect(stdout).toContain("Installed claude MCP");
+      const claudeConfig = JSON.parse(await readFile(path.join(project, ".mcp.json"), "utf8")) as {
+        mcpServers: { agentroom: { command: string; args: string[]; cwd: string; env: { AGENTROOM_PROJECT_ROOT: string } } };
+      };
+      const realProject = await realpath(project);
+      expect(claudeConfig.mcpServers.agentroom).toMatchObject({
+        command: "npx",
+        args: ["-y", "@venture-ia/agentroom", "mcp"],
+        cwd: realProject,
+        env: { AGENTROOM_PROJECT_ROOT: realProject }
+      });
+      await expect(readFile(path.join(project, ".agentroom", "AGENTROOM_AGENT.md"), "utf8")).resolves.toContain("check_file_before_edit");
+    } finally {
       await rm(sandbox, { recursive: true, force: true });
     }
   });

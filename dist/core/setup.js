@@ -11,7 +11,7 @@ export async function setupAgentRoom(projectRoot = process.cwd(), input = {}) {
     if (remote) {
         const [project, state] = await Promise.all([remote.getCurrentProject(), remote.getState()]);
         const store = new AgentRoomStore(projectRoot, { roomDir: getProjectAgentRoomDir(projectRoot) });
-        const files = await writeIntegrationFiles(store, project);
+        const files = await writeIntegrationFiles(store, project, input.mcpCommandMode);
         return {
             store,
             project,
@@ -24,7 +24,7 @@ export async function setupAgentRoom(projectRoot = process.cwd(), input = {}) {
     const created = existingRoom
         ? await setupLinkedProject(projectRoot, input)
         : await AgentRoomStore.createSharedRoom(projectRoot, input);
-    const files = await writeIntegrationFiles(created.store, created.project);
+    const files = await writeIntegrationFiles(created.store, created.project, input.mcpCommandMode);
     return {
         store: created.store,
         project: created.project,
@@ -39,10 +39,10 @@ async function setupLinkedProject(projectRoot, input) {
     const room = await store.initialize();
     return { store, project, room };
 }
-async function writeIntegrationFiles(store, project) {
+async function writeIntegrationFiles(store, project, mcpCommandMode = "auto") {
     const integrationsDir = path.join(store.projectAgentRoomDir, "integrations");
     await ensureSafeDirectory(integrationsDir);
-    const mcpCommand = await resolveMcpCommand();
+    const mcpCommand = await resolveMcpCommand(mcpCommandMode);
     const mcpServer = {
         command: mcpCommand.command,
         args: [...mcpCommand.args, "mcp"],
@@ -60,7 +60,10 @@ async function writeIntegrationFiles(store, project) {
     await writeTextFile(agentGuide, renderAgentGuide(project));
     return { permissions, agentGuide, codexMcp, claudeMcp };
 }
-async function resolveMcpCommand() {
+async function resolveMcpCommand(mode = "auto") {
+    if (mode === "portable") {
+        return portableMcpCommand();
+    }
     const modulePath = fileURLToPath(import.meta.url);
     const sourceRoot = path.resolve(path.dirname(modulePath), "..", "..");
     const packageRoot = await fs.realpath(sourceRoot);
@@ -82,6 +85,9 @@ async function resolveMcpCommand() {
         return { command: process.execPath, args: [repoTsx, sourceCli] };
     }
     return { command: process.execPath, args: [path.join(packageRoot, "dist", "cli.js")] };
+}
+function portableMcpCommand() {
+    return { command: "npx", args: ["-y", "@venture-ia/agentroom"] };
 }
 async function isExistingPathInside(candidate, root) {
     try {

@@ -13,6 +13,7 @@ export type SetupInput = {
   role?: string;
   agentKind?: string;
   humanOwner?: string;
+  mcpCommandMode?: "auto" | "portable";
 };
 
 export type AgentRoomSetup = {
@@ -33,7 +34,7 @@ export async function setupAgentRoom(projectRoot = process.cwd(), input: SetupIn
   if (remote) {
     const [project, state] = await Promise.all([remote.getCurrentProject(), remote.getState()]);
     const store = new AgentRoomStore(projectRoot, { roomDir: getProjectAgentRoomDir(projectRoot) });
-    const files = await writeIntegrationFiles(store, project);
+    const files = await writeIntegrationFiles(store, project, input.mcpCommandMode);
     return {
       store,
       project,
@@ -48,7 +49,7 @@ export async function setupAgentRoom(projectRoot = process.cwd(), input: SetupIn
     ? await setupLinkedProject(projectRoot, input)
     : await AgentRoomStore.createSharedRoom(projectRoot, input);
 
-  const files = await writeIntegrationFiles(created.store, created.project);
+  const files = await writeIntegrationFiles(created.store, created.project, input.mcpCommandMode);
 
   return {
     store: created.store,
@@ -66,11 +67,11 @@ async function setupLinkedProject(projectRoot: string, input: SetupInput) {
   return { store, project, room };
 }
 
-async function writeIntegrationFiles(store: AgentRoomStore, project: Project): Promise<AgentRoomSetup["files"]> {
+async function writeIntegrationFiles(store: AgentRoomStore, project: Project, mcpCommandMode: SetupInput["mcpCommandMode"] = "auto"): Promise<AgentRoomSetup["files"]> {
   const integrationsDir = path.join(store.projectAgentRoomDir, "integrations");
   await ensureSafeDirectory(integrationsDir);
 
-  const mcpCommand = await resolveMcpCommand();
+  const mcpCommand = await resolveMcpCommand(mcpCommandMode);
   const mcpServer = {
     command: mcpCommand.command,
     args: [...mcpCommand.args, "mcp"],
@@ -92,7 +93,11 @@ async function writeIntegrationFiles(store: AgentRoomStore, project: Project): P
   return { permissions, agentGuide, codexMcp, claudeMcp };
 }
 
-async function resolveMcpCommand(): Promise<{ command: string; args: string[] }> {
+async function resolveMcpCommand(mode: SetupInput["mcpCommandMode"] = "auto"): Promise<{ command: string; args: string[] }> {
+  if (mode === "portable") {
+    return portableMcpCommand();
+  }
+
   const modulePath = fileURLToPath(import.meta.url);
   const sourceRoot = path.resolve(path.dirname(modulePath), "..", "..");
   const packageRoot = await fs.realpath(sourceRoot);
@@ -115,6 +120,10 @@ async function resolveMcpCommand(): Promise<{ command: string; args: string[] }>
   }
 
   return { command: process.execPath, args: [path.join(packageRoot, "dist", "cli.js")] };
+}
+
+function portableMcpCommand(): { command: string; args: string[] } {
+  return { command: "npx", args: ["-y", "@venture-ia/agentroom"] };
 }
 
 async function isExistingPathInside(candidate: string, root: string): Promise<boolean> {
