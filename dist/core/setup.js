@@ -99,10 +99,12 @@ function resolvePortablePackageSpec(explicitPackageSpec) {
     const npmExecSpec = process.env.npm_config_package?.trim();
     if (npmExecSpec && isReusableNpxPackageSpec(npmExecSpec))
         return npmExecSpec;
-    return "github:VentureIA/Agent-Room";
+    return "agentroom-ai";
 }
 function isReusableNpxPackageSpec(spec) {
     return (spec === "agentroom" ||
+        /^@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(?:@.+)?$/i.test(spec) ||
+        /^[a-z0-9][a-z0-9._-]*(?:@.+)?$/i.test(spec) ||
         spec === "@venture-ia/agentroom" ||
         spec.startsWith("github:") ||
         spec.startsWith("git+") ||

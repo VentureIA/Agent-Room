@@ -49,7 +49,7 @@ describe("hosted relay", () => {
       const installer = await fetch(`${relay.url}/install.sh`);
       expect(installer.status).toBe(200);
       expect(installer.headers.get("content-type")).toContain("text/x-shellscript");
-      expect(await installer.text()).toContain("github:VentureIA/Agent-Room#main");
+      expect(await installer.text()).toContain("agentroom-ai");
 
       const connected = await runCli(
         projectA,

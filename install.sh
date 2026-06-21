@@ -3,8 +3,8 @@ set -eu
 
 client="${1:-${AGENTROOM_CLIENT:-all}}"
 project_name="${2:-${AGENTROOM_NAME:-$(basename "$PWD")}}"
-package_spec="${AGENTROOM_PACKAGE:-github:VentureIA/Agent-Room#main}"
-mcp_package_spec="${AGENTROOM_MCP_PACKAGE:-github:VentureIA/Agent-Room#main}"
+package_spec="${AGENTROOM_PACKAGE:-agentroom-ai}"
+mcp_package_spec="${AGENTROOM_MCP_PACKAGE:-agentroom-ai}"
 
 case "$client" in
   all|claude|codex) ;;

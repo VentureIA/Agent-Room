@@ -85,26 +85,25 @@ With an explicit project name:
 curl -fsSL https://agent-room.venture-ia.com/install.sh | sh -s -- all Findy
 ```
 
-The installer currently uses the GitHub package internally, so it works before
-npm publishing. AgentRoom writes MCP configs that keep using that package:
+The installer uses the npm package internally. AgentRoom writes MCP configs that
+keep using the same package:
 
 ```bash
-npx -y github:VentureIA/Agent-Room#main mcp
+npx -y agentroom-ai mcp
 ```
 
-The package is also configured for npm as `agentroom`. Once it is published, the
-short npm command becomes:
+The npm package is published as `agentroom-ai`, so the direct npm command is:
 
 ```bash
-npx -y agentroom init
+npx -y agentroom-ai init
 ```
 
 For a specific agent client:
 
 ```bash
-npx -y agentroom init claude
-npx -y agentroom init codex
-npx -y agentroom init all
+npx -y agentroom-ai init claude
+npx -y agentroom-ai init codex
+npx -y agentroom-ai init all
 ```
 
 This prepares `.agentroom/`, writes the agent guide, and installs the project MCP
@@ -116,7 +115,7 @@ config:
 The generated MCP config uses a portable command:
 
 ```bash
-npx -y agentroom mcp
+npx -y agentroom-ai mcp
 ```
 
 Restart Claude Code or Codex after running `init`, then ask:
@@ -135,7 +134,7 @@ npm login
 npm publish --access public
 ```
 
-After that, the `npx -y agentroom init` command works from any project without
+After that, the `npx -y agentroom-ai init` command works from any project without
 cloning AgentRoom first.
 
 ## Install From GitHub
@@ -174,8 +173,8 @@ In the first project, create the shared room:
 
 ```bash
 cd /path/to/wordpress-project
-npx -y agentroom init claude --name WordPress
-npx -y agentroom connect --name WordPress --agent Claude
+npx -y agentroom-ai init claude --name WordPress
+npx -y agentroom-ai connect --name WordPress --agent Claude
 ```
 
 The command prints an invite code like:
@@ -188,21 +187,21 @@ In the second project, join the room:
 
 ```bash
 cd /path/to/saas-project
-npx -y agentroom init codex --name SaaS
-npx -y agentroom join ar_XXXXXXX --name SaaS --agent Codex
+npx -y agentroom-ai init codex --name SaaS
+npx -y agentroom-ai join ar_XXXXXXX --name SaaS --agent Codex
 ```
 
 List connected projects:
 
 ```bash
-npx -y agentroom projects
+npx -y agentroom-ai projects
 ```
 
 Ask a question from the SaaS project to the WordPress project:
 
 ```bash
 cd /path/to/saas-project
-npx -y agentroom ask \
+npx -y agentroom-ai ask \
   --from SaaS \
   --to WordPress \
   --topic case_study.heroImage \
@@ -214,7 +213,7 @@ Process the WordPress inbox:
 
 ```bash
 cd /path/to/wordpress-project
-npx -y agentroom process-inbox
+npx -y agentroom-ai process-inbox
 ```
 
 If visible files contain enough evidence, AgentRoom records the answer
@@ -229,7 +228,7 @@ From each project, install the local MCP config:
 
 ```bash
 cd /path/to/project
-npx -y agentroom init all
+npx -y agentroom-ai init all
 ```
 
 This writes:
@@ -240,8 +239,8 @@ This writes:
 If your client expects a custom config path:
 
 ```bash
-npx -y agentroom install-codex --portable --scope custom --config .codex/custom-mcp.json
-npx -y agentroom install-claude --portable --scope custom --config .mcp.json
+npx -y agentroom-ai install-codex --portable --scope custom --config .codex/custom-mcp.json
+npx -y agentroom-ai install-claude --portable --scope custom --config .mcp.json
 ```
 
 Restart Codex or Claude Code after installing the MCP config. The agent should
@@ -467,7 +466,7 @@ The examples below use `agentroom` as the binary name. You can run the same
 commands through npm with:
 
 ```bash
-npx -y agentroom <command>
+npx -y agentroom-ai <command>
 ```
 
 For local development before npm publishing, replace `agentroom` with:
@@ -511,7 +510,7 @@ agentroom install-mcp claude
 
 Install AgentRoom MCP configuration files for Codex and/or Claude Code.
 Use `--portable` when you want the generated MCP config to run
-`npx -y agentroom mcp`.
+`npx -y agentroom-ai mcp`.
 
 ```bash
 agentroom status

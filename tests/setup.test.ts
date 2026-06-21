@@ -82,7 +82,7 @@ describe("setupAgentRoom", () => {
       };
       expect(portableConfig.mcpServers.agentroom).toMatchObject({
         command: "npx",
-        args: ["-y", "github:VentureIA/Agent-Room", "mcp"],
+        args: ["-y", "agentroom-ai", "mcp"],
         cwd: project
       });
 
@@ -90,14 +90,14 @@ describe("setupAgentRoom", () => {
         client: "claude",
         name: "Install Demo",
         mcpCommandMode: "portable",
-        mcpPackageSpec: "agentroom"
+        mcpPackageSpec: "agentroom-ai"
       });
       const npmConfig = JSON.parse(await readFile(npmPortable.configPath, "utf8")) as {
         mcpServers: { agentroom: { command: string; args: string[]; cwd: string } };
       };
       expect(npmConfig.mcpServers.agentroom).toMatchObject({
         command: "npx",
-        args: ["-y", "agentroom", "mcp"],
+        args: ["-y", "agentroom-ai", "mcp"],
         cwd: project
       });
 
@@ -143,7 +143,7 @@ describe("setupAgentRoom", () => {
       await writePackage(project, "init-demo");
       const { stdout } = await execFileAsync(process.execPath, [tsxCli, cliPath, "init", "claude", "--name", "Init Demo"], {
         cwd: project,
-        env: { ...process.env, AGENTROOM_HOME: home, npm_config_package: "github:VentureIA/Agent-Room" }
+        env: { ...process.env, AGENTROOM_HOME: home }
       });
 
       expect(stdout).toContain("AgentRoom initialized for Init Demo.");
@@ -154,7 +154,7 @@ describe("setupAgentRoom", () => {
       const realProject = await realpath(project);
       expect(claudeConfig.mcpServers.agentroom).toMatchObject({
         command: "npx",
-        args: ["-y", "github:VentureIA/Agent-Room", "mcp"],
+        args: ["-y", "agentroom-ai", "mcp"],
         cwd: realProject,
         env: { AGENTROOM_PROJECT_ROOT: realProject }
       });

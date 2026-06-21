@@ -1,6 +1,6 @@
 {
-  "name": "agentroom",
-  "version": "0.1.0",
+  "name": "agentroom-ai",
+  "version": "0.1.1",
   "description": "Local-first shared understanding layer for AI-coded projects.",
   "type": "module",
   "repository": {
@@ -12,8 +12,9 @@
   },
   "homepage": "https://github.com/VentureIA/Agent-Room#readme",
   "bin": {
-    "agentroom": "./dist/cli.js",
-    "agentroom-relay": "./dist/server/hosted-relay.js"
+    "agentroom-ai": "dist/cli.js",
+    "agentroom": "dist/cli.js",
+    "agentroom-relay": "dist/server/hosted-relay.js"
   },
   "publishConfig": {
     "access": "public"

@@ -15,7 +15,7 @@ const execFileAsync = promisify(execFile);
 export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? process.cwd()) {
     const server = new McpServer({
         name: "agentroom",
-        version: "0.1.0"
+        version: "0.1.1"
     });
     const requireStore = () => AgentRoomStore.requireLinkedProject(root);
     const requireClient = async () => (await RemoteAgentRoomClient.forLinkedProject(root)) ?? (await AgentRoomStore.requireLinkedProject(root));
