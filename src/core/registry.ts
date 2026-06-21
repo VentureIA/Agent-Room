@@ -20,6 +20,7 @@ export type ProjectRoomLink = {
   roomDir?: string;
   mode?: "local" | "remote";
   relayUrl?: string;
+  dashboardUrl?: string;
   projectId?: string;
   projectToken?: string;
   linkedAt: string;
@@ -123,6 +124,7 @@ export async function writeRemoteProjectLink(
     roomId: string;
     inviteCode: string;
     relayUrl: string;
+    dashboardUrl?: string;
     projectId: string;
     projectToken: string;
   }
@@ -132,6 +134,7 @@ export async function writeRemoteProjectLink(
     roomId: input.roomId,
     inviteCode: input.inviteCode,
     relayUrl: normalizeRelayUrl(input.relayUrl),
+    dashboardUrl: input.dashboardUrl,
     projectId: input.projectId,
     projectToken: input.projectToken,
     linkedAt: new Date().toISOString()

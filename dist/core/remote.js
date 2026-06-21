@@ -148,10 +148,11 @@ export async function connectRemoteRoom(projectRoot, relayUrl, adminToken, input
         roomId: response.room.id,
         inviteCode: response.room.inviteCode,
         relayUrl,
+        dashboardUrl: response.dashboardUrl,
         projectId: response.project.id,
         projectToken: response.projectToken
     });
-    return { room: response.room, project: response.project, inviteCode: response.room.inviteCode, relayUrl: normalizeRelayUrl(relayUrl) };
+    return { room: response.room, project: response.project, inviteCode: response.room.inviteCode, relayUrl: normalizeRelayUrl(relayUrl), dashboardUrl: response.dashboardUrl };
 }
 export async function joinRemoteRoom(projectRoot, relayUrl, inviteCode, input) {
     const project = await buildRemoteProjectInput(projectRoot, input);

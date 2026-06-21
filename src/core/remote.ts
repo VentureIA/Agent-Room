@@ -20,6 +20,7 @@ export type RemoteConnectResult = {
   project: Project;
   inviteCode: string;
   relayUrl: string;
+  dashboardUrl?: string;
 };
 
 export class RemoteAgentRoomClient {
@@ -205,10 +206,11 @@ export async function connectRemoteRoom(
     roomId: response.room.id,
     inviteCode: response.room.inviteCode,
     relayUrl,
+    dashboardUrl: response.dashboardUrl,
     projectId: response.project.id,
     projectToken: response.projectToken
   });
-  return { room: response.room, project: response.project, inviteCode: response.room.inviteCode, relayUrl: normalizeRelayUrl(relayUrl) };
+  return { room: response.room, project: response.project, inviteCode: response.room.inviteCode, relayUrl: normalizeRelayUrl(relayUrl), dashboardUrl: response.dashboardUrl };
 }
 
 export async function joinRemoteRoom(
@@ -310,4 +312,5 @@ type RemoteJoinPayload = {
   room: Room;
   project: Project;
   projectToken: string;
+  dashboardUrl?: string;
 };

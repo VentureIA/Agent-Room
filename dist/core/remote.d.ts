@@ -12,6 +12,7 @@ export type RemoteConnectResult = {
     project: Project;
     inviteCode: string;
     relayUrl: string;
+    dashboardUrl?: string;
 };
 export declare class RemoteAgentRoomClient {
     readonly projectRoot: string;

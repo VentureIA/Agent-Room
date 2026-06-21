@@ -258,6 +258,23 @@ The MCP `open_dashboard` tool can open the tokenized dashboard URL in your local
 browser. It only returns the clean local origin to the agent, not the launch
 token.
 
+For hosted relay rooms, the dashboard runs on the relay itself. The `connect
+--relay` command prints a tokenized dashboard URL:
+
+```text
+Dashboard: https://agentroom.example.com/dashboard/ar_XXXXXXX?token=ard_...
+```
+
+Open that link once in your browser to create a secure dashboard session cookie.
+After that, the clean `/dashboard/ar_XXXXXXX` URL can reload the same room in
+that browser. Share the tokenized dashboard link only with humans who are allowed
+to approve decisions, contracts, and access requests.
+
+When a hosted room is created from Codex or Claude Code through MCP, the
+`connect_project` tool returns `dashboardUrl`, and the creator project's
+`open_dashboard` tool can reopen that hosted dashboard later. Projects that only
+joined the room do not store the human dashboard token by default.
+
 ## Permission Model
 
 Each connected project gets:
@@ -506,6 +523,16 @@ node /path/to/Agent-Room/dist/cli.js connect \
   --agent Claude
 ```
 
+The command prints:
+
+```text
+Invite code: ar_XXXXXXX
+Dashboard: https://agentroom.example.com/dashboard/ar_XXXXXXX?token=ard_...
+```
+
+Send the invite code to the other developer. Keep the dashboard link for the
+human approver, or share it only with trusted reviewers.
+
 Developer B joins from another computer:
 
 ```bash
@@ -527,6 +554,13 @@ node /path/to/Agent-Room/dist/cli.js process-inbox
 The relay stores shared coordination state. It does not read developer project
 files. Each agent reads only its own local files through `.agentroom/permissions.md`
 and sends answers, decisions, contracts, and access requests to the relay.
+
+The hosted dashboard is intentionally separate from project tokens:
+
+- project tokens let Codex or Claude Code act for one connected project;
+- the dashboard token lets a human view the shared room and approve or reject
+  decisions, contracts, and access requests;
+- a dashboard session cannot call project-only endpoints.
 
 ### Deploy The Relay On Dokploy
 

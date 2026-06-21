@@ -120,6 +120,7 @@ program
       console.log(`Connected ${connected.project.name} to remote AgentRoom.`);
       console.log(`Invite code: ${connected.inviteCode}`);
       console.log(`Relay: ${connected.relayUrl}`);
+      if (connected.dashboardUrl) console.log(`Dashboard: ${connected.dashboardUrl}`);
       console.log(`Project files: ${process.cwd()}/.agentroom`);
       return;
     }

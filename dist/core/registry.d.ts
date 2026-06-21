@@ -14,6 +14,7 @@ export type ProjectRoomLink = {
     roomDir?: string;
     mode?: "local" | "remote";
     relayUrl?: string;
+    dashboardUrl?: string;
     projectId?: string;
     projectToken?: string;
     linkedAt: string;
@@ -37,6 +38,7 @@ export declare function writeRemoteProjectLink(projectRoot: string, input: {
     roomId: string;
     inviteCode: string;
     relayUrl: string;
+    dashboardUrl?: string;
     projectId: string;
     projectToken: string;
 }): Promise<ProjectRoomLink>;

@@ -215,6 +215,38 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
       }
     },
     async (input) => {
+      const link = await readProjectLink(root);
+      if (link?.mode === "remote") {
+        if (link.dashboardUrl) {
+          if (input.openBrowser) await open(link.dashboardUrl);
+          return text(
+            JSON.stringify(
+              {
+                url: link.dashboardUrl,
+                openedBrowser: input.openBrowser,
+                mode: "remote",
+                relayUrl: link.relayUrl,
+                inviteCode: link.inviteCode
+              },
+              null,
+              2
+            )
+          );
+        }
+        return text(
+          JSON.stringify(
+            {
+              mode: "remote",
+              relayUrl: link.relayUrl,
+              inviteCode: link.inviteCode,
+              dashboardUrl: null,
+              note: "This project joined a hosted room but does not store the human dashboard token. Ask the room creator for the dashboard link printed by connect_project."
+            },
+            null,
+            2
+          )
+        );
+      }
       if (!dashboardRelay) dashboardRelay = await startRelay({ root, port: input.port });
       if (input.openBrowser) await open(dashboardRelay.url);
       const publicUrl = new URL(dashboardRelay.url).origin;

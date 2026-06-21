@@ -75,6 +75,12 @@ type RoomState = {
   summary: string;
 };
 
+type DashboardInfo = {
+  mode: "local" | "remote";
+  roomId?: string;
+  inviteCode?: string;
+};
+
 const emptyState: RoomState = {
   room: { id: "", name: "AgentRoom", inviteCode: "" },
   projects: [],
@@ -87,6 +93,7 @@ const emptyState: RoomState = {
 
 function App() {
   const [state, setState] = useState<RoomState>(emptyState);
+  const [dashboardInfo, setDashboardInfo] = useState<DashboardInfo>({ mode: "local" });
   const [loading, setLoading] = useState(true);
   const [actionStatus, setActionStatus] = useState("");
 
@@ -97,6 +104,9 @@ function App() {
   }
 
   useEffect(() => {
+    fetchJson<DashboardInfo>("/api/dashboard-info")
+      .then(setDashboardInfo)
+      .catch(() => setDashboardInfo({ mode: "local" }));
     refresh().catch(() => setLoading(false));
     const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
     socket.addEventListener("message", (event) => {
@@ -165,7 +175,7 @@ function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Local relay online</p>
+          <p className="eyebrow">{dashboardInfo.mode === "remote" ? "Hosted relay online" : "Local relay online"}</p>
           <h1>AgentRoom</h1>
         </div>
         <div className="top-actions">
@@ -178,15 +188,21 @@ function App() {
         </div>
       </header>
 
-      <section className="command-strip">
-        <button onClick={connectCurrentProject}>
-          <Link2 size={18} /> Connect project
-        </button>
-        <button onClick={seedDemo}>
-          <MessageSquarePlus size={18} /> Add demo flow
-        </button>
-        <span>{actionStatus || (loading ? "Loading room state..." : "Ready")}</span>
-      </section>
+      {dashboardInfo.mode === "local" ? (
+        <section className="command-strip">
+          <button onClick={connectCurrentProject}>
+            <Link2 size={18} /> Connect project
+          </button>
+          <button onClick={seedDemo}>
+            <MessageSquarePlus size={18} /> Add demo flow
+          </button>
+          <span>{actionStatus || (loading ? "Loading room state..." : "Ready")}</span>
+        </section>
+      ) : (
+        <section className="command-strip">
+          <span>{actionStatus || (loading ? "Loading remote room state..." : "Remote dashboard ready")}</span>
+        </section>
+      )}
 
       <section className="overview">
         <Metric label="Incompatibilities" value={metrics.incompatibilities} tone="danger" />
