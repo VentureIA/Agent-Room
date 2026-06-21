@@ -41,7 +41,7 @@ Implemented today:
 - project-local permission files;
 - Codex and Claude Code MCP config generation;
 - MCP tools for setup, status, questions, answers, decisions, contracts, access
-  requests, summaries, and autonomous inbox processing;
+  requests, file collision alerts, summaries, and autonomous inbox processing;
 - a local approval dashboard;
 - safe file reads limited by AgentRoom permissions;
 - autonomous answers when visible files contain enough evidence;
@@ -207,6 +207,10 @@ Useful MCP tools exposed by AgentRoom:
 - `read_permissions`
 - `propose_permissions_update`
 - `request_access`
+- `check_file_before_edit`
+- `confirm_file_alert`
+- `publish_file_activity`
+- `list_file_alerts`
 - `report_test_result`
 
 ## How Autonomous Agent Coordination Works
@@ -221,10 +225,43 @@ Typical flow:
 4. AgentRoom checks files allowed by `.agentroom/permissions.md`.
 5. If the answer is supported by visible files, the agent records the answer.
 6. If access is missing, the agent creates an access request.
-7. The human approves or rejects sensitive changes in the dashboard.
+7. Before editing a file, the agent calls `check_file_before_edit`.
+8. If another connected project has touched the same file, the agent asks the
+   human yes/no inside Codex or Claude Code before continuing.
+9. The human approves or rejects sensitive changes in the dashboard.
 
 This keeps the human out of repetitive relay work while keeping sensitive access
 and decisions visible.
+
+## File Collision Alerts
+
+AgentRoom can warn an agent before it edits a file that another connected
+project has already touched.
+
+The intended native-agent flow is:
+
+1. Codex or Claude Code is about to edit `src/shared/api.ts`.
+2. The agent calls `check_file_before_edit` through MCP.
+3. If no collision exists, the tool returns `requiresUserConfirmation: false`.
+4. If another project has an active file activity on the same project-relative
+   path, the tool returns `requiresUserConfirmation: true` and a human prompt.
+5. The agent must stop and ask the human in the Codex or Claude Code chat:
+
+```text
+AgentRoom detected a possible file collision for src/shared/api.ts.
+Another connected project has touched this file. Continue anyway?
+```
+
+6. If the human says yes, the agent calls `confirm_file_alert` with
+   `decision: "continue"` and may edit.
+7. If the human says no, the agent calls `confirm_file_alert` with
+   `decision: "cancel"` and should coordinate first.
+8. After editing, the agent calls `publish_file_activity` with
+   `status: "modified"`.
+
+AgentRoom stores only file metadata such as path, status, branch, repository,
+last commit, project id, and timestamps. It does not upload file contents for
+this feature.
 
 ## Dashboard
 

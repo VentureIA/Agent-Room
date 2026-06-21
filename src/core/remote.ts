@@ -6,7 +6,7 @@ import { ensureSafeDirectory, exists, writeTextFile } from "./files.js";
 import { getProjectAgentRoomDir, readProjectLink, writeRemoteProjectLink, type ProjectRoomLink } from "./registry.js";
 import { classifyPath, parsePermissions, readAllowedFile } from "./permissions.js";
 import { defaultPermissionsMarkdown, renderProjectCard } from "./project-card.js";
-import type { AccessRequest, Contract, Decision, Message, Project, Question, Room, RoomState } from "./types.js";
+import type { AccessRequest, Contract, Decision, FileActivity, FileAlert, FileEditCheck, Message, Project, Question, Room, RoomState } from "./types.js";
 
 export type RemoteProjectInput = {
   name?: string;
@@ -122,6 +122,40 @@ export class RemoteAgentRoomClient {
       method: "POST",
       body: JSON.stringify(input)
     });
+  }
+
+  async publishFileActivity(input: Omit<FileActivity, "id" | "roomId" | "projectId" | "createdAt" | "updatedAt">): Promise<FileActivity> {
+    return this.request<FileActivity>(`/api/rooms/${this.link.roomId}/file-activity`, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  }
+
+  async checkFileBeforeEdit(input: Omit<FileActivity, "id" | "roomId" | "projectId" | "createdAt" | "updatedAt"> & { intent?: string }): Promise<FileEditCheck> {
+    return this.request<FileEditCheck>(`/api/rooms/${this.link.roomId}/file-alerts/check`, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  }
+
+  async confirmFileAlert(input: {
+    alertId: string;
+    decision: "continue" | "cancel";
+    confirmedBy?: string;
+    note?: string;
+  }): Promise<FileAlert> {
+    return this.request<FileAlert>(`/api/rooms/${this.link.roomId}/file-alerts/${input.alertId}/confirm`, {
+      method: "POST",
+      body: JSON.stringify({
+        decision: input.decision,
+        confirmedBy: input.confirmedBy,
+        note: input.note
+      })
+    });
+  }
+
+  async listFileAlerts(): Promise<FileAlert[]> {
+    return this.request<FileAlert[]>(`/api/rooms/${this.link.roomId}/file-alerts`);
   }
 
   async processInboxAutonomously(options: ProcessInboxOptions = {}): Promise<ProcessInboxResult> {

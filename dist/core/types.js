@@ -56,4 +56,21 @@ export const contractSchema = z.object({
     })),
     breakingChangesRequireHumanApproval: z.boolean().default(true)
 });
+export const fileActivitySchema = z.object({
+    path: z.string().min(1),
+    status: z.enum(["editing", "modified", "staged"]).default("modified"),
+    branch: z.string().optional(),
+    repository: z.string().optional(),
+    lastCommit: z.string().optional(),
+    contentHash: z.string().optional(),
+    note: z.string().optional()
+});
+export const fileEditCheckSchema = fileActivitySchema.extend({
+    intent: z.string().default("edit")
+});
+export const fileAlertConfirmationSchema = z.object({
+    decision: z.enum(["continue", "cancel"]),
+    confirmedBy: z.string().default("Human owner"),
+    note: z.string().optional()
+});
 //# sourceMappingURL=types.js.map

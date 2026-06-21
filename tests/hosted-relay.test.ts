@@ -108,8 +108,45 @@ describe("hosted relay", () => {
         roomId: string;
         projectToken: string;
       }>(path.join(projectB, ".agentroom", "room-link.json"));
+      const wordpressLink = await readJsonFile<{
+        roomId: string;
+        projectToken: string;
+      }>(path.join(projectA, ".agentroom", "room-link.json"));
       const dashboardAsProject = await fetch(`${relay.url}/api/rooms/${saasLink.roomId}/state`, { headers: { cookie: dashboardCookie! } });
       expect(dashboardAsProject.status).toBe(401);
+
+      const wordpressActivity = await fetch(`${relay.url}/api/rooms/${wordpressLink.roomId}/file-activity`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${wordpressLink.projectToken}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ path: "src/shared/case-study.ts", status: "modified", branch: "main" })
+      });
+      expect(wordpressActivity.status).toBe(201);
+
+      const saasCheck = await fetch(`${relay.url}/api/rooms/${saasLink.roomId}/file-alerts/check`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${saasLink.projectToken}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ path: "src/shared/case-study.ts", status: "editing", branch: "main" })
+      });
+      expect(saasCheck.status).toBe(200);
+      const fileCheck = await saasCheck.json() as { requiresUserConfirmation: boolean; alerts: Array<{ id: string }> };
+      expect(fileCheck.requiresUserConfirmation).toBe(true);
+
+      const saasConfirm = await fetch(`${relay.url}/api/rooms/${saasLink.roomId}/file-alerts/${fileCheck.alerts[0]!.id}/confirm`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${saasLink.projectToken}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ decision: "continue", confirmedBy: "Matho" })
+      });
+      expect(saasConfirm.status).toBe(200);
+      expect(await saasConfirm.json()).toMatchObject({ status: "continued", resolution: "continue" });
 
       const proposedDecision = await fetch(`${relay.url}/api/rooms/${saasLink.roomId}/decisions`, {
         method: "POST",

@@ -78,6 +78,31 @@ export class RemoteAgentRoomClient {
             body: JSON.stringify(input)
         });
     }
+    async publishFileActivity(input) {
+        return this.request(`/api/rooms/${this.link.roomId}/file-activity`, {
+            method: "POST",
+            body: JSON.stringify(input)
+        });
+    }
+    async checkFileBeforeEdit(input) {
+        return this.request(`/api/rooms/${this.link.roomId}/file-alerts/check`, {
+            method: "POST",
+            body: JSON.stringify(input)
+        });
+    }
+    async confirmFileAlert(input) {
+        return this.request(`/api/rooms/${this.link.roomId}/file-alerts/${input.alertId}/confirm`, {
+            method: "POST",
+            body: JSON.stringify({
+                decision: input.decision,
+                confirmedBy: input.confirmedBy,
+                note: input.note
+            })
+        });
+    }
+    async listFileAlerts() {
+        return this.request(`/api/rooms/${this.link.roomId}/file-alerts`);
+    }
     async processInboxAutonomously(options = {}) {
         const currentProject = await this.getCurrentProject();
         const state = await this.getState();

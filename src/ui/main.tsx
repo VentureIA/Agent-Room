@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   CircleHelp,
   FileKey2,
+  FileWarning,
   GitBranch,
   KeyRound,
   Link2,
@@ -65,6 +66,17 @@ type AccessRequest = {
   status: "pending" | "approved" | "denied";
 };
 
+type FileAlert = {
+  id: string;
+  path: string;
+  status: "active" | "continued" | "cancelled";
+  triggeredByProjectId: string;
+  conflictingProjectId: string;
+  reason: string;
+  createdAt: string;
+  resolution?: "continue" | "cancel";
+};
+
 type RoomState = {
   room: { id: string; name: string; inviteCode: string };
   projects: Project[];
@@ -72,6 +84,7 @@ type RoomState = {
   decisions: Decision[];
   contracts: Contract[];
   accessRequests: AccessRequest[];
+  fileAlerts: FileAlert[];
   summary: string;
 };
 
@@ -88,6 +101,7 @@ const emptyState: RoomState = {
   decisions: [],
   contracts: [],
   accessRequests: [],
+  fileAlerts: [],
   summary: ""
 };
 
@@ -122,6 +136,7 @@ function App() {
       openQuestions: state.questions.filter((question) => question.status === "open").length,
       pendingDecisions: state.decisions.filter((decision) => decision.status === "proposed").length,
       pendingAccess: state.accessRequests.filter((request) => request.status === "pending").length,
+      activeFileAlerts: state.fileAlerts.filter((alert) => alert.status === "active").length,
       syncedContracts: state.contracts.filter((contract) => contract.status === "active").length
     }),
     [state]
@@ -209,6 +224,7 @@ function App() {
         <Metric label="Open questions" value={metrics.openQuestions} tone="ink" />
         <Metric label="Decisions to validate" value={metrics.pendingDecisions} tone="warn" />
         <Metric label="Access requests" value={metrics.pendingAccess} tone="violet" />
+        <Metric label="File alerts" value={metrics.activeFileAlerts} tone="danger" />
       </section>
 
       <section className="project-map">
@@ -242,6 +258,14 @@ function App() {
             <Empty text="No access requests yet." />
           ) : (
             state.accessRequests.map((request) => <AccessRequestRow key={request.id} request={request} projects={state.projects} onRefresh={refresh} />)
+          )}
+        </Panel>
+
+        <Panel title="File Alerts" icon={<FileWarning size={18} />}>
+          {state.fileAlerts.length === 0 ? (
+            <Empty text="No file collision alerts yet." />
+          ) : (
+            state.fileAlerts.map((alert) => <FileAlertRow key={alert.id} alert={alert} projects={state.projects} />)
           )}
         </Panel>
 
@@ -408,6 +432,23 @@ function AccessRequestRow({ request, projects, onRefresh }: { request: AccessReq
           </>
         )}
       </RowActions>
+    </article>
+  );
+}
+
+function FileAlertRow({ alert, projects }: { alert: FileAlert; projects: Project[] }) {
+  const triggeredBy = projects.find((project) => project.id === alert.triggeredByProjectId)?.name ?? "Current project";
+  const conflicting = projects.find((project) => project.id === alert.conflictingProjectId)?.name ?? "Other project";
+  return (
+    <article className={`row ${alert.status === "active" ? "urgency-blocking" : ""}`}>
+      <div>
+        <strong>{alert.path}</strong>
+        <p>{alert.reason}</p>
+        <small>
+          {triggeredBy} vs {conflicting}
+        </small>
+      </div>
+      <RowActions status={alert.resolution ?? alert.status}>{null}</RowActions>
     </article>
   );
 }

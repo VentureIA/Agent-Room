@@ -9,7 +9,7 @@ import { z } from "zod";
 import { ensureSafeDirectory, exists, readJson, writeJson } from "../core/files.js";
 import { createId } from "../core/ids.js";
 import { AgentRoomStore } from "../core/storage.js";
-import { answerSchema, contractSchema, decisionSchema } from "../core/types.js";
+import { answerSchema, contractSchema, decisionSchema, fileActivitySchema, fileAlertConfirmationSchema, fileEditCheckSchema } from "../core/types.js";
 const remoteProjectSchema = z.object({
     name: z.string().min(1),
     role: z.string().optional(),
@@ -207,6 +207,51 @@ export async function startHostedRelay(options = {}) {
             const message = await context.store.reportTestResultForProject(context.project.id, input);
             await broadcastRoomState(context.store, wss);
             res.status(201).json(message);
+        }
+        catch (error) {
+            next(error);
+        }
+    });
+    app.post("/api/rooms/:roomId/file-activity", requireProject(dataDir), async (req, res, next) => {
+        try {
+            const context = requestProjectContext(req);
+            const activity = await context.store.publishFileActivityForProject(context.project.id, fileActivitySchema.parse(req.body));
+            await broadcastRoomState(context.store, wss);
+            res.status(201).json(activity);
+        }
+        catch (error) {
+            next(error);
+        }
+    });
+    app.post("/api/rooms/:roomId/file-alerts/check", requireProject(dataDir), async (req, res, next) => {
+        try {
+            const context = requestProjectContext(req);
+            const result = await context.store.checkFileBeforeEditForProject(context.project.id, fileEditCheckSchema.parse(req.body));
+            await broadcastRoomState(context.store, wss);
+            res.json(result);
+        }
+        catch (error) {
+            next(error);
+        }
+    });
+    app.get("/api/rooms/:roomId/file-alerts", requireProject(dataDir), async (req, res, next) => {
+        try {
+            const context = requestProjectContext(req);
+            res.json(await context.store.listFileAlertsForProject(context.project.id));
+        }
+        catch (error) {
+            next(error);
+        }
+    });
+    app.post("/api/rooms/:roomId/file-alerts/:id/confirm", requireProject(dataDir), async (req, res, next) => {
+        try {
+            const context = requestProjectContext(req);
+            const alert = await context.store.confirmFileAlertForProject(context.project.id, {
+                alertId: String(req.params.id ?? ""),
+                ...fileAlertConfirmationSchema.parse(req.body)
+            });
+            await broadcastRoomState(context.store, wss);
+            res.json(alert);
         }
         catch (error) {
             next(error);

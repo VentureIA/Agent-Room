@@ -21,6 +21,9 @@ import type {
   Agent,
   Contract,
   Decision,
+  FileActivity,
+  FileAlert,
+  FileEditCheck,
   Message,
   Project,
   Question,
@@ -278,6 +281,8 @@ export class AgentRoomStore {
       decisions: (db.prepare("select * from decisions order by created_at desc").all() as StoredRow[]).map(mapDecision),
       contracts: (db.prepare("select * from contracts order by id").all() as StoredRow[]).map(mapContract),
       accessRequests: (db.prepare("select * from access_requests order by created_at desc").all() as StoredRow[]).map(mapAccessRequest),
+      fileActivities: (db.prepare("select * from file_activities order by updated_at desc").all() as StoredRow[]).map(mapFileActivity),
+      fileAlerts: (db.prepare("select * from file_alerts order by created_at desc").all() as StoredRow[]).map(mapFileAlert),
       summary: ""
     };
     state.summary = buildHumanSummary(state);
@@ -532,6 +537,176 @@ export class AgentRoomStore {
     });
   }
 
+  async publishFileActivity(input: Omit<FileActivity, "id" | "roomId" | "projectId" | "createdAt" | "updatedAt">): Promise<FileActivity> {
+    const currentProject = await this.getCurrentProject();
+    return this.publishFileActivityForProject(currentProject.id, input);
+  }
+
+  async publishFileActivityForProject(
+    projectId: string,
+    input: Omit<FileActivity, "id" | "roomId" | "projectId" | "createdAt" | "updatedAt">
+  ): Promise<FileActivity> {
+    const room = await this.initialize();
+    this.assertProjectExists(projectId);
+    const normalizedPath = normalizeProjectPath(input.path);
+    const existing = this.openDb()
+      .prepare("select * from file_activities where project_id = ? and path = ? limit 1")
+      .get(projectId, normalizedPath) as StoredRow | undefined;
+    const now = nowIso();
+    const activity: FileActivity = {
+      id: existing ? String(existing.id) : createId("fileact"),
+      roomId: room.id,
+      projectId,
+      path: normalizedPath,
+      status: input.status,
+      branch: input.branch,
+      repository: input.repository,
+      lastCommit: input.lastCommit,
+      contentHash: input.contentHash,
+      note: input.note,
+      createdAt: existing ? String(existing.created_at) : now,
+      updatedAt: now
+    };
+    this.openDb()
+      .prepare(
+        `insert into file_activities
+          (id, room_id, project_id, path, status, branch, repository, last_commit, content_hash, note, created_at, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         on conflict(project_id, path) do update set
+          status = excluded.status,
+          branch = excluded.branch,
+          repository = excluded.repository,
+          last_commit = excluded.last_commit,
+          content_hash = excluded.content_hash,
+          note = excluded.note,
+          updated_at = excluded.updated_at`
+      )
+      .run(
+        activity.id,
+        activity.roomId,
+        activity.projectId,
+        activity.path,
+        activity.status,
+        activity.branch ?? null,
+        activity.repository ?? null,
+        activity.lastCommit ?? null,
+        activity.contentHash ?? null,
+        activity.note ?? null,
+        activity.createdAt,
+        activity.updatedAt
+      );
+    return activity;
+  }
+
+  async checkFileBeforeEditForProject(
+    projectId: string,
+    input: Omit<FileActivity, "id" | "roomId" | "projectId" | "createdAt" | "updatedAt"> & { intent?: string }
+  ): Promise<FileEditCheck> {
+    const room = await this.initialize();
+    this.assertProjectExists(projectId);
+    const normalizedPath = normalizeProjectPath(input.path);
+    const candidates = (this.openDb()
+      .prepare(
+        `select * from file_activities
+         where path = ?
+           and project_id != ?
+           and status in ('editing', 'modified', 'staged')
+         order by updated_at desc`
+      )
+      .all(normalizedPath, projectId) as StoredRow[])
+      .map(mapFileActivity)
+      .filter((activity) => isSameWorkContext(input, activity));
+
+    if (candidates.length === 0) {
+      await this.publishFileActivityForProject(projectId, {
+        path: normalizedPath,
+        status: "editing",
+        branch: input.branch,
+        repository: input.repository,
+        lastCommit: input.lastCommit,
+        contentHash: input.contentHash,
+        note: input.note ?? `Intent: ${input.intent ?? "edit"}`
+      });
+      return {
+        ok: true,
+        requiresUserConfirmation: false,
+        path: normalizedPath,
+        alerts: [],
+        message: `No AgentRoom file collision detected for ${normalizedPath}.`
+      };
+    }
+
+    const alerts: FileAlert[] = [];
+    for (const conflict of candidates) {
+      const alert = await this.createFileAlert({
+        roomId: room.id,
+        path: normalizedPath,
+        triggeredByProjectId: projectId,
+        conflictingProjectId: conflict.projectId,
+        conflictingActivityId: conflict.id,
+        branch: input.branch,
+        repository: input.repository,
+        lastCommit: input.lastCommit,
+        reason: `Another project has ${conflict.status} activity on ${normalizedPath}. Ask the human before continuing.`
+      });
+      alerts.push(alert);
+    }
+
+    return {
+      ok: false,
+      requiresUserConfirmation: true,
+      path: normalizedPath,
+      alerts,
+      message: `AgentRoom detected ${alerts.length} possible file collision(s) on ${normalizedPath}. Ask the human if you should continue before editing.`
+    };
+  }
+
+  async confirmFileAlertForProject(
+    projectId: string,
+    input: {
+      alertId: string;
+      decision: "continue" | "cancel";
+      confirmedBy?: string;
+      note?: string;
+    }
+  ): Promise<FileAlert> {
+    this.assertProjectExists(projectId);
+    const existing = this.openDb().prepare("select * from file_alerts where id = ?").get(input.alertId) as StoredRow | undefined;
+    if (!existing) throw new Error(`File alert not found: ${input.alertId}`);
+    const alert = mapFileAlert(existing);
+    if (alert.triggeredByProjectId !== projectId) {
+      throw new Error(`Project ${projectId} cannot confirm file alert ${input.alertId}; it belongs to ${alert.triggeredByProjectId}.`);
+    }
+    if (alert.status !== "active") throw new Error(`File alert is already resolved: ${input.alertId}.`);
+    const status = input.decision === "continue" ? "continued" : "cancelled";
+    this.openDb()
+      .prepare(
+        "update file_alerts set status = ?, resolved_at = ?, resolved_by_project_id = ?, resolution = ?, note = ? where id = ?"
+      )
+      .run(status, nowIso(), projectId, input.decision, input.note ?? input.confirmedBy ?? null, input.alertId);
+    if (input.decision === "continue") {
+      await this.publishFileActivityForProject(projectId, {
+        path: alert.path,
+        status: "editing",
+        branch: alert.branch,
+        repository: alert.repository,
+        lastCommit: alert.lastCommit,
+        note: `Human confirmed continued editing despite alert ${alert.id}.`
+      });
+    }
+    const updated = this.openDb().prepare("select * from file_alerts where id = ?").get(input.alertId) as StoredRow;
+    return mapFileAlert(updated);
+  }
+
+  async listFileAlertsForProject(projectId?: string): Promise<FileAlert[]> {
+    const rows = projectId
+      ? this.openDb()
+          .prepare("select * from file_alerts where triggered_by_project_id = ? or conflicting_project_id = ? order by created_at desc")
+          .all(projectId, projectId)
+      : this.openDb().prepare("select * from file_alerts order by created_at desc").all();
+    return (rows as StoredRow[]).map(mapFileAlert);
+  }
+
   async listVisibleFiles(): Promise<string[]> {
     const policy = await this.loadPermissionPolicy();
     const files = await listFiles(this.projectRoot);
@@ -689,6 +864,40 @@ export class AgentRoomStore {
         status text not null,
         created_at text not null
       );
+      create table if not exists file_activities (
+        id text primary key,
+        room_id text not null,
+        project_id text not null,
+        path text not null,
+        status text not null,
+        branch text,
+        repository text,
+        last_commit text,
+        content_hash text,
+        note text,
+        created_at text not null,
+        updated_at text not null,
+        unique(project_id, path)
+      );
+      create table if not exists file_alerts (
+        id text primary key,
+        room_id text not null,
+        path text not null,
+        status text not null,
+        triggered_by_project_id text not null,
+        conflicting_project_id text not null,
+        activity_id text,
+        conflicting_activity_id text,
+        branch text,
+        repository text,
+        last_commit text,
+        reason text not null,
+        created_at text not null,
+        resolved_at text,
+        resolved_by_project_id text,
+        resolution text,
+        note text
+      );
     `);
   }
 
@@ -753,6 +962,68 @@ export class AgentRoomStore {
   private assertProjectExists(projectId: string): void {
     const row = this.openDb().prepare("select id from projects where id = ? limit 1").get(projectId) as StoredRow | undefined;
     if (!row) throw new Error(`Project does not exist in this AgentRoom: ${projectId}`);
+  }
+
+  private async createFileAlert(input: {
+    roomId: string;
+    path: string;
+    triggeredByProjectId: string;
+    conflictingProjectId: string;
+    activityId?: string;
+    conflictingActivityId?: string;
+    branch?: string;
+    repository?: string;
+    lastCommit?: string;
+    reason: string;
+  }): Promise<FileAlert> {
+    const existing = this.openDb()
+      .prepare(
+        `select * from file_alerts
+         where path = ?
+           and status = 'active'
+           and triggered_by_project_id = ?
+           and conflicting_project_id = ?
+         limit 1`
+      )
+      .get(input.path, input.triggeredByProjectId, input.conflictingProjectId) as StoredRow | undefined;
+    if (existing) return mapFileAlert(existing);
+    const alert: FileAlert = {
+      id: createId("filealert"),
+      roomId: input.roomId,
+      path: input.path,
+      status: "active",
+      triggeredByProjectId: input.triggeredByProjectId,
+      conflictingProjectId: input.conflictingProjectId,
+      activityId: input.activityId,
+      conflictingActivityId: input.conflictingActivityId,
+      branch: input.branch,
+      repository: input.repository,
+      lastCommit: input.lastCommit,
+      reason: input.reason,
+      createdAt: nowIso()
+    };
+    this.openDb()
+      .prepare(
+        `insert into file_alerts
+          (id, room_id, path, status, triggered_by_project_id, conflicting_project_id, activity_id, conflicting_activity_id, branch, repository, last_commit, reason, created_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        alert.id,
+        alert.roomId,
+        alert.path,
+        alert.status,
+        alert.triggeredByProjectId,
+        alert.conflictingProjectId,
+        alert.activityId ?? null,
+        alert.conflictingActivityId ?? null,
+        alert.branch ?? null,
+        alert.repository ?? null,
+        alert.lastCommit ?? null,
+        alert.reason,
+        alert.createdAt
+      );
+    return alert;
   }
 }
 
@@ -862,6 +1133,65 @@ function mapAccessRequest(row: StoredRow): AccessRequest {
     status: row.status === "approved" || row.status === "denied" ? row.status : "pending",
     createdAt: String(row.created_at)
   };
+}
+
+function mapFileActivity(row: StoredRow): FileActivity {
+  const status = row.status === "editing" || row.status === "staged" ? row.status : "modified";
+  return {
+    id: String(row.id),
+    roomId: String(row.room_id),
+    projectId: String(row.project_id),
+    path: String(row.path),
+    status,
+    branch: row.branch ? String(row.branch) : undefined,
+    repository: row.repository ? String(row.repository) : undefined,
+    lastCommit: row.last_commit ? String(row.last_commit) : undefined,
+    contentHash: row.content_hash ? String(row.content_hash) : undefined,
+    note: row.note ? String(row.note) : undefined,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at)
+  };
+}
+
+function mapFileAlert(row: StoredRow): FileAlert {
+  const status = row.status === "continued" || row.status === "cancelled" ? row.status : "active";
+  const resolution = row.resolution === "continue" || row.resolution === "cancel" ? row.resolution : undefined;
+  return {
+    id: String(row.id),
+    roomId: String(row.room_id),
+    path: String(row.path),
+    status,
+    triggeredByProjectId: String(row.triggered_by_project_id),
+    conflictingProjectId: String(row.conflicting_project_id),
+    activityId: row.activity_id ? String(row.activity_id) : undefined,
+    conflictingActivityId: row.conflicting_activity_id ? String(row.conflicting_activity_id) : undefined,
+    branch: row.branch ? String(row.branch) : undefined,
+    repository: row.repository ? String(row.repository) : undefined,
+    lastCommit: row.last_commit ? String(row.last_commit) : undefined,
+    reason: String(row.reason),
+    createdAt: String(row.created_at),
+    resolvedAt: row.resolved_at ? String(row.resolved_at) : undefined,
+    resolvedByProjectId: row.resolved_by_project_id ? String(row.resolved_by_project_id) : undefined,
+    resolution,
+    note: row.note ? String(row.note) : undefined
+  };
+}
+
+function normalizeProjectPath(value: string): string {
+  const normalized = value.replace(/\\/g, "/").replace(/^\.\/+/, "").trim();
+  if (!normalized || normalized.startsWith("../") || path.isAbsolute(normalized)) {
+    throw new Error(`File activity path must be project-relative: ${value}`);
+  }
+  return normalized;
+}
+
+function isSameWorkContext(
+  input: { branch?: string; repository?: string },
+  activity: Pick<FileActivity, "branch" | "repository">
+): boolean {
+  if (input.repository && activity.repository && input.repository !== activity.repository) return false;
+  if (input.branch && activity.branch && input.branch !== activity.branch) return false;
+  return true;
 }
 
 function isAllowedDecisionTransition(from: Decision["status"], to: "approved" | "rejected" | "applied"): boolean {

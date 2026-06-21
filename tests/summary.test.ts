@@ -49,6 +49,8 @@ describe("buildHumanSummary", () => {
       ],
       contracts: [],
       accessRequests: [],
+      fileActivities: [],
+      fileAlerts: [],
       summary: ""
     };
 

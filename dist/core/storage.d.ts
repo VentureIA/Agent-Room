@@ -1,5 +1,5 @@
 import { type RoomRecord } from "./registry.js";
-import type { AccessRequest, Contract, Decision, Message, Project, Question, Room, RoomState } from "./types.js";
+import type { AccessRequest, Contract, Decision, FileActivity, FileAlert, FileEditCheck, Message, Project, Question, Room, RoomState } from "./types.js";
 export declare class AgentRoomStore {
     readonly projectRoot: string;
     readonly projectAgentRoomDir: string;
@@ -97,6 +97,18 @@ export declare class AgentRoomStore {
         summary: string;
         affects?: string[];
     }): Promise<Message>;
+    publishFileActivity(input: Omit<FileActivity, "id" | "roomId" | "projectId" | "createdAt" | "updatedAt">): Promise<FileActivity>;
+    publishFileActivityForProject(projectId: string, input: Omit<FileActivity, "id" | "roomId" | "projectId" | "createdAt" | "updatedAt">): Promise<FileActivity>;
+    checkFileBeforeEditForProject(projectId: string, input: Omit<FileActivity, "id" | "roomId" | "projectId" | "createdAt" | "updatedAt"> & {
+        intent?: string;
+    }): Promise<FileEditCheck>;
+    confirmFileAlertForProject(projectId: string, input: {
+        alertId: string;
+        decision: "continue" | "cancel";
+        confirmedBy?: string;
+        note?: string;
+    }): Promise<FileAlert>;
+    listFileAlertsForProject(projectId?: string): Promise<FileAlert[]>;
     listVisibleFiles(): Promise<string[]>;
     readAllowedProjectFile(relativePath: string): Promise<string>;
     readPermissionsMarkdown(): Promise<string>;
@@ -113,4 +125,5 @@ export declare class AgentRoomStore {
     private writeRoomManifest;
     private writeDecisionsMarkdown;
     private assertProjectExists;
+    private createFileAlert;
 }

@@ -109,6 +109,9 @@ At the start of each coding session:
 - Use read_permissions and propose_permissions_update to review visibility rules; do not write permission changes directly from an agent.
 - Use list_visible_files and read_allowed_file only for files allowed by .agentroom/permissions.md.
 - Use request_access instead of reading hidden or ask-first files directly.
+- Before editing or creating a file, call check_file_before_edit with the project-relative path.
+- If check_file_before_edit returns requiresUserConfirmation=true, stop and ask the human in ${project.agentKind} whether to continue. Do not edit until the human explicitly says yes, then call confirm_file_alert with decision="continue". If the human says no, call confirm_file_alert with decision="cancel".
+- After touching a file that may affect another connected project, call publish_file_activity with status="modified".
 - Use report_test_result after verification runs that affect shared contracts.
 
 Autonomous answering rules:

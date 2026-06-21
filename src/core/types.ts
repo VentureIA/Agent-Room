@@ -108,6 +108,51 @@ export type AccessRequest = {
   createdAt: string;
 };
 
+export type FileActivityStatus = "editing" | "modified" | "staged";
+
+export type FileActivity = {
+  id: string;
+  roomId: string;
+  projectId: string;
+  path: string;
+  status: FileActivityStatus;
+  branch?: string;
+  repository?: string;
+  lastCommit?: string;
+  contentHash?: string;
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FileAlert = {
+  id: string;
+  roomId: string;
+  path: string;
+  status: "active" | "continued" | "cancelled";
+  triggeredByProjectId: string;
+  conflictingProjectId: string;
+  activityId?: string;
+  conflictingActivityId?: string;
+  branch?: string;
+  repository?: string;
+  lastCommit?: string;
+  reason: string;
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedByProjectId?: string;
+  resolution?: "continue" | "cancel";
+  note?: string;
+};
+
+export type FileEditCheck = {
+  ok: boolean;
+  requiresUserConfirmation: boolean;
+  path: string;
+  alerts: FileAlert[];
+  message: string;
+};
+
 export type PermissionPolicy = {
   visible: string[];
   askFirst: string[];
@@ -124,6 +169,8 @@ export type RoomState = {
   decisions: Decision[];
   contracts: Contract[];
   accessRequests: AccessRequest[];
+  fileActivities: FileActivity[];
+  fileAlerts: FileAlert[];
   summary: string;
 };
 
@@ -177,4 +224,24 @@ export const contractSchema = z.object({
     })
   ),
   breakingChangesRequireHumanApproval: z.boolean().default(true)
+});
+
+export const fileActivitySchema = z.object({
+  path: z.string().min(1),
+  status: z.enum(["editing", "modified", "staged"]).default("modified"),
+  branch: z.string().optional(),
+  repository: z.string().optional(),
+  lastCommit: z.string().optional(),
+  contentHash: z.string().optional(),
+  note: z.string().optional()
+});
+
+export const fileEditCheckSchema = fileActivitySchema.extend({
+  intent: z.string().default("edit")
+});
+
+export const fileAlertConfirmationSchema = z.object({
+  decision: z.enum(["continue", "cancel"]),
+  confirmedBy: z.string().default("Human owner"),
+  note: z.string().optional()
 });

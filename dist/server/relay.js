@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import { z } from "zod";
 import { AgentRoomStore } from "../core/storage.js";
 import { updateRoomRelayUrl, writeProjectLink } from "../core/registry.js";
-import { answerSchema, connectProjectSchema, contractSchema, decisionSchema, questionSchema } from "../core/types.js";
+import { answerSchema, connectProjectSchema, contractSchema, decisionSchema, fileActivitySchema, fileAlertConfirmationSchema, fileEditCheckSchema, questionSchema } from "../core/types.js";
 const relayConnectProjectSchema = connectProjectSchema.omit({ path: true });
 export async function startRelay(options = {}) {
     const port = options.port ?? 4317;
@@ -127,6 +127,50 @@ export async function startRelay(options = {}) {
             const request = await store.updateAccessRequestStatus({ accessRequestId: req.params.id, status: input.status });
             await broadcastState(store, wss);
             res.json(request);
+        }
+        catch (error) {
+            next(error);
+        }
+    });
+    app.post("/api/file-activity", async (req, res, next) => {
+        try {
+            const activity = await store.publishFileActivity(fileActivitySchema.parse(req.body));
+            await broadcastState(store, wss);
+            res.status(201).json(activity);
+        }
+        catch (error) {
+            next(error);
+        }
+    });
+    app.post("/api/file-alerts/check", async (req, res, next) => {
+        try {
+            const currentProject = await store.getCurrentProject();
+            const result = await store.checkFileBeforeEditForProject(currentProject.id, fileEditCheckSchema.parse(req.body));
+            await broadcastState(store, wss);
+            res.json(result);
+        }
+        catch (error) {
+            next(error);
+        }
+    });
+    app.get("/api/file-alerts", async (_req, res, next) => {
+        try {
+            const currentProject = await store.getCurrentProject();
+            res.json(await store.listFileAlertsForProject(currentProject.id));
+        }
+        catch (error) {
+            next(error);
+        }
+    });
+    app.post("/api/file-alerts/:id/confirm", async (req, res, next) => {
+        try {
+            const currentProject = await store.getCurrentProject();
+            const alert = await store.confirmFileAlertForProject(currentProject.id, {
+                alertId: String(req.params.id ?? ""),
+                ...fileAlertConfirmationSchema.parse(req.body)
+            });
+            await broadcastState(store, wss);
+            res.json(alert);
         }
         catch (error) {
             next(error);

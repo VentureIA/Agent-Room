@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import open from "open";
@@ -10,6 +12,9 @@ import { setupAgentRoom } from "../core/setup.js";
 import { AgentRoomStore } from "../core/storage.js";
 import type { RoomState } from "../core/types.js";
 import { startRelay } from "../server/relay.js";
+import type { FileActivityStatus } from "../core/types.js";
+
+const execFileAsync = promisify(execFile);
 
 export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? process.cwd()): Promise<void> {
   const server = new McpServer({
@@ -570,6 +575,114 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
   );
 
   server.registerTool(
+    "check_file_before_edit",
+    {
+      title: "Check File Before Edit",
+      description: "Preflight a file edit. If another project has touched the same file, stop and ask the human for native yes/no confirmation before editing.",
+      inputSchema: {
+        path: z.string(),
+        intent: z.string().default("edit"),
+        note: z.string().optional()
+      }
+    },
+    async (input) => {
+      const client = await requireClient();
+      const currentProject = await client.getCurrentProject();
+      const activity = await buildFileActivityInput(root, input.path, "editing", input.note ?? `Intent: ${input.intent}`);
+      const result = client instanceof RemoteAgentRoomClient
+        ? await client.checkFileBeforeEdit({ ...activity, intent: input.intent })
+        : await client.checkFileBeforeEditForProject(currentProject.id, { ...activity, intent: input.intent });
+      return text(
+        JSON.stringify(
+          {
+            ...result,
+            currentProject,
+            userPrompt: result.requiresUserConfirmation ? buildFileAlertPrompt(result.path, result.alerts.length) : null,
+            nextTool: result.requiresUserConfirmation ? "confirm_file_alert" : null,
+            nativeInstruction: result.requiresUserConfirmation
+              ? "Stop. Ask the human in Codex/Claude whether to continue despite this AgentRoom file alert. Do not edit the file until the human explicitly says yes."
+              : "Safe to continue."
+          },
+          null,
+          2
+        )
+      );
+    }
+  );
+
+  server.registerTool(
+    "confirm_file_alert",
+    {
+      title: "Confirm File Alert",
+      description: "Record the human yes/no decision after check_file_before_edit returned requiresUserConfirmation.",
+      inputSchema: {
+        alertId: z.string(),
+        decision: z.enum(["continue", "cancel"]),
+        confirmedBy: z.string().default("Human owner"),
+        note: z.string().optional()
+      }
+    },
+    async (input) => {
+      const client = await requireClient();
+      const currentProject = await client.getCurrentProject();
+      const alert = client instanceof RemoteAgentRoomClient
+        ? await client.confirmFileAlert(input)
+        : await client.confirmFileAlertForProject(currentProject.id, input);
+      return text(
+        JSON.stringify(
+          {
+            alert,
+            mayEdit: input.decision === "continue",
+            nativeInstruction: input.decision === "continue"
+              ? "The human approved continuing despite the AgentRoom file alert. You may edit the file."
+              : "The human cancelled. Do not edit the file; coordinate with the other project first."
+          },
+          null,
+          2
+        )
+      );
+    }
+  );
+
+  server.registerTool(
+    "publish_file_activity",
+    {
+      title: "Publish File Activity",
+      description: "Publish that this project is editing, modified, or staged on a project-relative file path.",
+      inputSchema: {
+        path: z.string(),
+        status: z.enum(["editing", "modified", "staged"]).default("modified"),
+        note: z.string().optional()
+      }
+    },
+    async (input) => {
+      const client = await requireClient();
+      const activityInput = await buildFileActivityInput(root, input.path, input.status, input.note);
+      const activity = client instanceof RemoteAgentRoomClient
+        ? await client.publishFileActivity(activityInput)
+        : await client.publishFileActivity(activityInput);
+      return text(JSON.stringify(activity, null, 2));
+    }
+  );
+
+  server.registerTool(
+    "list_file_alerts",
+    {
+      title: "List File Alerts",
+      description: "List active and recently resolved AgentRoom file collision alerts for this project.",
+      inputSchema: {}
+    },
+    async () => {
+      const client = await requireClient();
+      const currentProject = await client.getCurrentProject();
+      const alerts = client instanceof RemoteAgentRoomClient
+        ? await client.listFileAlerts()
+        : await client.listFileAlertsForProject(currentProject.id);
+      return text(JSON.stringify(alerts, null, 2));
+    }
+  );
+
+  server.registerTool(
     "request_access",
     {
       title: "Request Access",
@@ -655,8 +768,9 @@ Use the MCP tools in this order:
 2. Call start_agent_session with processInbox=true.
 3. If process_inbox answers anything, include the evidence in your working context.
 4. If blockers remain, call ask_question for the owning project.
-5. Before touching shared contracts or sensitive permissions, create a proposed decision or request access.
-6. Do not ask the human to run terminal commands unless MCP setup itself is missing.`)
+5. Before editing or creating a file, call check_file_before_edit. If it returns requiresUserConfirmation, ask the human yes/no in the native agent chat and wait before editing.
+6. Before touching shared contracts or sensitive permissions, create a proposed decision or request access.
+7. Do not ask the human to run terminal commands unless MCP setup itself is missing.`)
   );
 
   server.registerPrompt(
@@ -716,7 +830,10 @@ function buildMcpInbox(state: RoomState, currentProjectId: string) {
   return {
     questions: state.questions.filter((question) => question.status === "open" && question.toProjectId === currentProjectId),
     decisions: state.decisions.filter((decision) => decision.status === "proposed"),
-    accessRequests: state.accessRequests.filter((request) => request.status === "pending" && request.toProjectId === currentProjectId)
+    accessRequests: state.accessRequests.filter((request) => request.status === "pending" && request.toProjectId === currentProjectId),
+    fileAlerts: state.fileAlerts.filter(
+      (alert) => alert.status === "active" && (alert.triggeredByProjectId === currentProjectId || alert.conflictingProjectId === currentProjectId)
+    )
   };
 }
 
@@ -724,4 +841,34 @@ function text(value: string) {
   return {
     content: [{ type: "text" as const, text: value }]
   };
+}
+
+async function buildFileActivityInput(root: string, filePath: string, status: FileActivityStatus, note: string | undefined) {
+  const [branch, repository, lastCommit] = await Promise.all([
+    gitOutput(root, ["rev-parse", "--abbrev-ref", "HEAD"]),
+    gitOutput(root, ["config", "--get", "remote.origin.url"]),
+    gitOutput(root, ["rev-parse", "HEAD"])
+  ]);
+  return {
+    path: filePath,
+    status,
+    branch,
+    repository,
+    lastCommit,
+    note
+  };
+}
+
+async function gitOutput(root: string, args: string[]): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", root, ...args], { timeout: 2000 });
+    const value = stdout.trim();
+    return value || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildFileAlertPrompt(filePath: string, alertCount: number): string {
+  return `AgentRoom detected ${alertCount} possible file collision(s) for ${filePath}. Another connected project has touched this file. Continue anyway? Reply yes to continue, or no to stop and coordinate.`;
 }

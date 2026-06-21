@@ -141,6 +141,80 @@ describe("AgentRoomStore", () => {
     }
   });
 
+  it("requires human confirmation before editing a file touched by another project", async () => {
+    const rootA = await mkdtemp(path.join(os.tmpdir(), "agentroom-file-a-"));
+    const rootB = await mkdtemp(path.join(os.tmpdir(), "agentroom-file-b-"));
+    try {
+      const storeA = new AgentRoomStore(rootA);
+      const projectA = await storeA.connectProject({ name: "Dev A" });
+      const storeB = new AgentRoomStore(rootB, { roomDir: storeA.roomDir });
+      const projectB = await storeB.connectProject({ name: "Dev B" });
+
+      await storeA.publishFileActivityForProject(projectA.id, {
+        path: "src/shared/api.ts",
+        status: "modified",
+        branch: "main",
+        repository: "git@example.com/app.git"
+      });
+
+      const check = await storeB.checkFileBeforeEditForProject(projectB.id, {
+        path: "src/shared/api.ts",
+        status: "editing",
+        branch: "main",
+        repository: "git@example.com/app.git",
+        intent: "edit importer"
+      });
+
+      expect(check.requiresUserConfirmation).toBe(true);
+      expect(check.alerts).toHaveLength(1);
+      expect(check.message).toContain("Ask the human");
+
+      const confirmed = await storeB.confirmFileAlertForProject(projectB.id, {
+        alertId: check.alerts[0]!.id,
+        decision: "continue",
+        confirmedBy: "Matho"
+      });
+      expect(confirmed.status).toBe("continued");
+      expect(confirmed.resolution).toBe("continue");
+
+      const state = await storeB.getState();
+      expect(state.fileAlerts[0]).toMatchObject({ id: confirmed.id, status: "continued" });
+      expect(state.fileActivities).toEqual(expect.arrayContaining([expect.objectContaining({ projectId: projectB.id, path: "src/shared/api.ts" })]));
+    } finally {
+      await rm(rootA, { recursive: true, force: true });
+      await rm(rootB, { recursive: true, force: true });
+    }
+  });
+
+  it("does not warn for matching paths on different branches", async () => {
+    const rootA = await mkdtemp(path.join(os.tmpdir(), "agentroom-file-branch-a-"));
+    const rootB = await mkdtemp(path.join(os.tmpdir(), "agentroom-file-branch-b-"));
+    try {
+      const storeA = new AgentRoomStore(rootA);
+      const projectA = await storeA.connectProject({ name: "Dev A" });
+      const storeB = new AgentRoomStore(rootB, { roomDir: storeA.roomDir });
+      const projectB = await storeB.connectProject({ name: "Dev B" });
+
+      await storeA.publishFileActivityForProject(projectA.id, {
+        path: "src/shared/api.ts",
+        status: "modified",
+        branch: "feature-a"
+      });
+
+      const check = await storeB.checkFileBeforeEditForProject(projectB.id, {
+        path: "src/shared/api.ts",
+        status: "editing",
+        branch: "feature-b"
+      });
+
+      expect(check.ok).toBe(true);
+      expect(check.requiresUserConfirmation).toBe(false);
+    } finally {
+      await rm(rootA, { recursive: true, force: true });
+      await rm(rootB, { recursive: true, force: true });
+    }
+  });
+
   it("does not infer field nullability from unrelated null evidence", async () => {
     const rootA = await mkdtemp(path.join(os.tmpdir(), "agentroom-autonomous-a-"));
     const rootB = await mkdtemp(path.join(os.tmpdir(), "agentroom-autonomous-b-"));

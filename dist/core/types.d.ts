@@ -89,6 +89,47 @@ export type AccessRequest = {
     status: "pending" | "approved" | "denied";
     createdAt: string;
 };
+export type FileActivityStatus = "editing" | "modified" | "staged";
+export type FileActivity = {
+    id: string;
+    roomId: string;
+    projectId: string;
+    path: string;
+    status: FileActivityStatus;
+    branch?: string;
+    repository?: string;
+    lastCommit?: string;
+    contentHash?: string;
+    note?: string;
+    createdAt: string;
+    updatedAt: string;
+};
+export type FileAlert = {
+    id: string;
+    roomId: string;
+    path: string;
+    status: "active" | "continued" | "cancelled";
+    triggeredByProjectId: string;
+    conflictingProjectId: string;
+    activityId?: string;
+    conflictingActivityId?: string;
+    branch?: string;
+    repository?: string;
+    lastCommit?: string;
+    reason: string;
+    createdAt: string;
+    resolvedAt?: string;
+    resolvedByProjectId?: string;
+    resolution?: "continue" | "cancel";
+    note?: string;
+};
+export type FileEditCheck = {
+    ok: boolean;
+    requiresUserConfirmation: boolean;
+    path: string;
+    alerts: FileAlert[];
+    message: string;
+};
 export type PermissionPolicy = {
     visible: string[];
     askFirst: string[];
@@ -104,6 +145,8 @@ export type RoomState = {
     decisions: Decision[];
     contracts: Contract[];
     accessRequests: AccessRequest[];
+    fileActivities: FileActivity[];
+    fileAlerts: FileAlert[];
     summary: string;
 };
 export declare const connectProjectSchema: z.ZodObject<{
@@ -169,4 +212,39 @@ export declare const contractSchema: z.ZodObject<{
         payload: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>>;
     breakingChangesRequireHumanApproval: z.ZodDefault<z.ZodBoolean>;
+}, z.core.$strip>;
+export declare const fileActivitySchema: z.ZodObject<{
+    path: z.ZodString;
+    status: z.ZodDefault<z.ZodEnum<{
+        editing: "editing";
+        modified: "modified";
+        staged: "staged";
+    }>>;
+    branch: z.ZodOptional<z.ZodString>;
+    repository: z.ZodOptional<z.ZodString>;
+    lastCommit: z.ZodOptional<z.ZodString>;
+    contentHash: z.ZodOptional<z.ZodString>;
+    note: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>;
+export declare const fileEditCheckSchema: z.ZodObject<{
+    path: z.ZodString;
+    status: z.ZodDefault<z.ZodEnum<{
+        editing: "editing";
+        modified: "modified";
+        staged: "staged";
+    }>>;
+    branch: z.ZodOptional<z.ZodString>;
+    repository: z.ZodOptional<z.ZodString>;
+    lastCommit: z.ZodOptional<z.ZodString>;
+    contentHash: z.ZodOptional<z.ZodString>;
+    note: z.ZodOptional<z.ZodString>;
+    intent: z.ZodDefault<z.ZodString>;
+}, z.core.$strip>;
+export declare const fileAlertConfirmationSchema: z.ZodObject<{
+    decision: z.ZodEnum<{
+        continue: "continue";
+        cancel: "cancel";
+    }>;
+    confirmedBy: z.ZodDefault<z.ZodString>;
+    note: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;

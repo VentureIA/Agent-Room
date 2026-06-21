@@ -1,6 +1,6 @@
 import { type ProcessInboxOptions, type ProcessInboxResult } from "./autonomous.js";
 import { type ProjectRoomLink } from "./registry.js";
-import type { AccessRequest, Contract, Decision, Message, Project, Question, Room, RoomState } from "./types.js";
+import type { AccessRequest, Contract, Decision, FileActivity, FileAlert, FileEditCheck, Message, Project, Question, Room, RoomState } from "./types.js";
 export type RemoteProjectInput = {
     name?: string;
     role?: string;
@@ -47,6 +47,17 @@ export declare class RemoteAgentRoomClient {
         summary: string;
         affects?: string[];
     }): Promise<Message>;
+    publishFileActivity(input: Omit<FileActivity, "id" | "roomId" | "projectId" | "createdAt" | "updatedAt">): Promise<FileActivity>;
+    checkFileBeforeEdit(input: Omit<FileActivity, "id" | "roomId" | "projectId" | "createdAt" | "updatedAt"> & {
+        intent?: string;
+    }): Promise<FileEditCheck>;
+    confirmFileAlert(input: {
+        alertId: string;
+        decision: "continue" | "cancel";
+        confirmedBy?: string;
+        note?: string;
+    }): Promise<FileAlert>;
+    listFileAlerts(): Promise<FileAlert[]>;
     processInboxAutonomously(options?: ProcessInboxOptions): Promise<ProcessInboxResult>;
     listVisibleFiles(): Promise<string[]>;
     readAllowedProjectFile(relativePath: string): Promise<string>;
