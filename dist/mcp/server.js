@@ -1,0 +1,445 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import open from "open";
+import { z } from "zod";
+import { processInboxAutonomously } from "../core/autonomous.js";
+import { installMcpConfig } from "../core/install.js";
+import { findRoomByInvite, readProjectLink } from "../core/registry.js";
+import { setupAgentRoom } from "../core/setup.js";
+import { AgentRoomStore } from "../core/storage.js";
+import { startRelay } from "../server/relay.js";
+export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? process.cwd()) {
+    const server = new McpServer({
+        name: "agentroom",
+        version: "0.1.0"
+    });
+    const requireStore = () => AgentRoomStore.requireLinkedProject(root);
+    let dashboardRelay;
+    registerAgentRoomPrompts(server);
+    server.registerTool("setup_project", {
+        title: "Setup AgentRoom Project",
+        description: "Prepare the current project for AgentRoom from inside the agent interface. Creates or repairs permissions, project card, agent guide, and MCP config files.",
+        inputSchema: {
+            name: z.string().optional(),
+            role: z.string().optional(),
+            agentKind: z.string().default("Codex"),
+            humanOwner: z.string().default("Human owner")
+        }
+    }, async (input) => {
+        const setup = await setupAgentRoom(root, input);
+        return text(JSON.stringify({
+            project: setup.project,
+            room: setup.room,
+            createdRoom: setup.createdRoom,
+            sharedRoom: setup.store.roomDir,
+            files: setup.files
+        }, null, 2));
+    });
+    server.registerTool("install_client_config", {
+        title: "Install Client Config",
+        description: "Install AgentRoom MCP into a project-local or custom Codex/Claude Code JSON config file.",
+        inputSchema: {
+            client: z.enum(["codex", "claude"]),
+            configPath: z.string().optional(),
+            scope: z.enum(["project", "custom"]).default("project"),
+            name: z.string().optional(),
+            role: z.string().optional(),
+            agentKind: z.string().default("Codex"),
+            humanOwner: z.string().default("Human owner")
+        }
+    }, async (input) => text(JSON.stringify(await installMcpConfig(root, input), null, 2)));
+    server.registerTool("install_all_client_configs", {
+        title: "Install All Client Configs",
+        description: "Install project-local AgentRoom MCP configs for both Codex and Claude Code.",
+        inputSchema: {
+            name: z.string().optional(),
+            role: z.string().optional(),
+            agentKind: z.string().default("Codex"),
+            humanOwner: z.string().default("Human owner")
+        }
+    }, async (input) => {
+        const codex = await installMcpConfig(root, { ...input, client: "codex" });
+        const claude = await installMcpConfig(root, { ...input, client: "claude" });
+        return text(JSON.stringify({ codex, claude }, null, 2));
+    });
+    server.registerTool("connect_project", {
+        title: "Connect Project",
+        description: "Connect the current project to a new or existing local AgentRoom and publish its project card.",
+        inputSchema: {
+            name: z.string().optional(),
+            role: z.string().optional(),
+            agentKind: z.string().default("Codex"),
+            humanOwner: z.string().default("Human owner")
+        }
+    }, async (input) => {
+        const connected = await AgentRoomStore.createSharedRoom(root, input);
+        return text(JSON.stringify({
+            project: connected.project,
+            room: connected.room,
+            inviteCode: connected.room.inviteCode,
+            sharedRoom: connected.record.roomDir,
+            projectFiles: connected.store.projectAgentRoomDir
+        }, null, 2));
+    });
+    server.registerTool("join_room", {
+        title: "Join Room",
+        description: "Join an existing local AgentRoom from an invite code and register the current project.",
+        inputSchema: {
+            inviteCode: z.string(),
+            name: z.string().optional(),
+            role: z.string().optional(),
+            agentKind: z.string().default("Codex"),
+            humanOwner: z.string().default("Human owner")
+        }
+    }, async (input) => {
+        const record = await findRoomByInvite(input.inviteCode);
+        if (!record)
+            throw new Error(`No local AgentRoom invite found for ${input.inviteCode}.`);
+        const joined = await AgentRoomStore.joinSharedRoom(root, record, input);
+        return text(JSON.stringify({
+            project: joined.project,
+            room: joined.room,
+            inviteCode: joined.room.inviteCode,
+            sharedRoom: record.roomDir
+        }, null, 2));
+    });
+    server.registerTool("get_current_project", {
+        title: "Get Current Project",
+        description: "Return the AgentRoom project associated with the current MCP server working directory.",
+        inputSchema: {}
+    }, async () => text(JSON.stringify(await (await requireStore()).getCurrentProject(), null, 2)));
+    server.registerTool("get_status", {
+        title: "Get AgentRoom Status",
+        description: "Return room status, project counts, and local link information for the current project.",
+        inputSchema: {}
+    }, async () => {
+        const store = await requireStore();
+        const state = await store.getState();
+        const link = await readProjectLink(root);
+        return text(JSON.stringify({
+            room: state.room,
+            counts: {
+                projects: state.projects.length,
+                questions: state.questions.length,
+                openQuestions: state.questions.filter((question) => question.status === "open").length,
+                decisions: state.decisions.length,
+                contracts: state.contracts.length
+            },
+            linkedRoom: link?.roomDir
+        }, null, 2));
+    });
+    server.registerTool("open_dashboard", {
+        title: "Open Dashboard",
+        description: "Start the local AgentRoom dashboard relay from MCP and return the launch-token URL for the human approval cockpit.",
+        inputSchema: {
+            port: z.number().int().min(0).max(65535).default(4317),
+            openBrowser: z.boolean().default(true)
+        }
+    }, async (input) => {
+        if (!dashboardRelay)
+            dashboardRelay = await startRelay({ root, port: input.port });
+        if (input.openBrowser)
+            await open(dashboardRelay.url);
+        const publicUrl = new URL(dashboardRelay.url).origin;
+        return text(JSON.stringify({
+            url: publicUrl,
+            openedBrowser: input.openBrowser,
+            sharedRoom: dashboardRelay.store.roomDir
+        }, null, 2));
+    });
+    server.registerTool("start_agent_session", {
+        title: "Start Agent Session",
+        description: "Run the recommended AgentRoom startup workflow: status, current project, room summary, inbox, and safe autonomous inbox processing.",
+        inputSchema: {
+            processInbox: z.boolean().default(true),
+            maxQuestions: z.number().int().positive().max(20).default(5),
+            maxFiles: z.number().int().positive().max(200).default(30)
+        }
+    }, async (input) => {
+        const store = await requireStore();
+        const processed = input.processInbox
+            ? await processInboxAutonomously(store, { maxQuestions: input.maxQuestions, maxFiles: input.maxFiles })
+            : undefined;
+        const state = await store.getState();
+        const currentProject = await store.getCurrentProject();
+        const inbox = buildMcpInbox(state, currentProject.id);
+        return text(JSON.stringify({
+            currentProject,
+            room: state.room,
+            summary: state.summary,
+            inbox,
+            processed
+        }, null, 2));
+    });
+    server.registerTool("list_projects", {
+        title: "List Projects",
+        description: "List projects connected to the current AgentRoom.",
+        inputSchema: {}
+    }, async () => {
+        const state = await (await requireStore()).getState();
+        return text(JSON.stringify(state.projects, null, 2));
+    });
+    server.registerTool("get_invite_code", {
+        title: "Get Invite Code",
+        description: "Return the local invite code for adding another project to this AgentRoom.",
+        inputSchema: {}
+    }, async () => {
+        const room = await (await requireStore()).initialize();
+        return text(room.inviteCode);
+    });
+    server.registerTool("summarize_room", {
+        title: "Summarize AgentRoom",
+        description: "Return a human-readable summary of the current local AgentRoom.",
+        inputSchema: {}
+    }, async () => {
+        const store = await requireStore();
+        const state = await store.getState();
+        return text(state.summary);
+    });
+    server.registerTool("publish_project_card", {
+        title: "Publish Project Card",
+        description: "Connect the current project and publish its AgentRoom project card.",
+        inputSchema: {
+            name: z.string().optional(),
+            role: z.string().optional(),
+            agentKind: z.string().default("Codex"),
+            humanOwner: z.string().default("Human owner")
+        }
+    }, async (input) => text(JSON.stringify(await (await requireStore()).connectProject(input), null, 2)));
+    server.registerTool("ask_question", {
+        title: "Ask Question",
+        description: "Ask a structured project-to-project question.",
+        inputSchema: {
+            toProject: z.string(),
+            topic: z.string(),
+            question: z.string(),
+            impact: z.string(),
+            urgency: z.enum(["low", "normal", "blocking"]).default("normal")
+        }
+    }, async (input) => {
+        const store = await requireStore();
+        const currentProject = await store.getCurrentProject();
+        const toProject = await store.getProjectByReference(input.toProject);
+        return text(JSON.stringify(await store.askQuestion({
+            fromProjectId: currentProject.id,
+            toProjectId: toProject.id,
+            topic: input.topic,
+            question: input.question,
+            impact: input.impact,
+            urgency: input.urgency
+        }), null, 2));
+    });
+    server.registerTool("answer_question", {
+        title: "Answer Question",
+        description: "Answer a structured AgentRoom question.",
+        inputSchema: {
+            questionId: z.string(),
+            answer: z.string(),
+            suggestedResolution: z.string().optional(),
+            confidence: z.enum(["low", "medium", "high"]).default("medium")
+        }
+    }, async (input) => {
+        const store = await requireStore();
+        const currentProject = await store.getCurrentProject();
+        return text(JSON.stringify(await store.answerQuestionForProject(currentProject.id, input), null, 2));
+    });
+    server.registerTool("record_decision", {
+        title: "Record Decision",
+        description: "Record a decision after human approval or as a proposal.",
+        inputSchema: {
+            title: z.string(),
+            reason: z.string(),
+            affects: z.array(z.string()).default([]),
+            risk: z.string().default("No risk documented yet.")
+        }
+    }, async (input) => {
+        const store = await requireStore();
+        return text(JSON.stringify(await store.recordDecision({
+            ...input,
+            status: "proposed",
+            approvedBy: []
+        }), null, 2));
+    });
+    server.registerTool("publish_contract", {
+        title: "Publish Contract",
+        description: "Publish or update a simple integration contract.",
+        inputSchema: {
+            id: z.string().optional(),
+            providerProjectId: z.string(),
+            consumerProjectId: z.string(),
+            version: z.string().default("v1"),
+            resources: z.array(z.object({
+                kind: z.string(),
+                name: z.string(),
+                fields: z.array(z.object({ name: z.string(), type: z.string(), required: z.boolean() })).optional(),
+                payload: z.string().optional()
+            })),
+            breakingChangesRequireHumanApproval: z.boolean().default(true)
+        }
+    }, async (input) => {
+        const store = await requireStore();
+        const currentProject = await store.getCurrentProject();
+        if (input.providerProjectId !== currentProject.id && input.consumerProjectId !== currentProject.id) {
+            throw new Error("Current project must be the provider or consumer for contracts published through MCP.");
+        }
+        return text(JSON.stringify(await store.publishContract({ ...input, status: "draft" }), null, 2));
+    });
+    server.registerTool("read_inbox", {
+        title: "Read Inbox",
+        description: "Read open questions and pending decisions.",
+        inputSchema: {}
+    }, async () => {
+        const store = await requireStore();
+        const state = await store.getState();
+        const currentProject = await store.getCurrentProject();
+        return text(JSON.stringify(buildMcpInbox(state, currentProject.id), null, 2));
+    });
+    server.registerTool("list_visible_files", {
+        title: "List Visible Files",
+        description: "List project-relative files visible under this project's AgentRoom permissions.",
+        inputSchema: {
+            limit: z.number().int().positive().max(1000).default(200)
+        }
+    }, async (input) => {
+        const store = await requireStore();
+        const files = await store.listVisibleFiles();
+        return text(JSON.stringify(files.slice(0, input.limit), null, 2));
+    });
+    server.registerTool("read_permissions", {
+        title: "Read Permissions",
+        description: "Read the current project's AgentRoom permissions markdown.",
+        inputSchema: {}
+    }, async () => text(await (await requireStore()).readPermissionsMarkdown()));
+    server.registerTool("propose_permissions_update", {
+        title: "Propose Permissions Update",
+        description: "Create a proposed decision with replacement permissions markdown. The dashboard/human approval path must apply sensitive permission changes.",
+        inputSchema: {
+            markdown: z.string(),
+            reason: z.string().default("Agent proposes updated AgentRoom visibility rules.")
+        }
+    }, async (input) => {
+        const store = await requireStore();
+        const currentProject = await store.getCurrentProject();
+        return text(JSON.stringify(await store.recordDecision({
+            title: `Update AgentRoom permissions for ${currentProject.name}`,
+            reason: `${input.reason}\n\nProposed permissions:\n\n${input.markdown}`,
+            status: "proposed",
+            approvedBy: [],
+            affects: [currentProject.name],
+            risk: "Changing visible paths may expose sensitive files if reviewed carelessly."
+        }), null, 2));
+    });
+    server.registerTool("read_allowed_file", {
+        title: "Read Allowed File",
+        description: "Read a project-relative file only if AgentRoom permissions mark it visible. Secret-like values are redacted.",
+        inputSchema: {
+            path: z.string()
+        }
+    }, async (input) => text(await (await requireStore()).readAllowedProjectFile(input.path)));
+    server.registerTool("request_access", {
+        title: "Request Access",
+        description: "Record a read-only access request instead of reading hidden or ask-first files directly.",
+        inputSchema: {
+            toProjectId: z.string(),
+            path: z.string(),
+            reason: z.string()
+        }
+    }, async (input) => {
+        const store = await requireStore();
+        const currentProject = await store.getCurrentProject();
+        return text(JSON.stringify(await store.requestAccess({
+            fromProjectId: currentProject.id,
+            toProjectId: input.toProjectId,
+            path: input.path,
+            reason: input.reason,
+            scope: "read-only"
+        }), null, 2));
+    });
+    server.registerTool("process_inbox", {
+        title: "Process Inbox",
+        description: "Autonomously answer open questions for the current project when visible files provide evidence.",
+        inputSchema: {
+            maxQuestions: z.number().int().positive().max(20).default(5),
+            maxFiles: z.number().int().positive().max(200).default(30)
+        }
+    }, async (input) => text(JSON.stringify(await processInboxAutonomously(await requireStore(), input), null, 2)));
+    server.registerTool("report_test_result", {
+        title: "Report Test Result",
+        description: "Publish a test result event to the shared AgentRoom timeline.",
+        inputSchema: {
+            status: z.enum(["passed", "failed", "skipped"]),
+            command: z.string(),
+            summary: z.string(),
+            affects: z.array(z.string()).default([])
+        }
+    }, async (input) => text(JSON.stringify(await (await requireStore()).reportTestResult(input), null, 2)));
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+}
+function registerAgentRoomPrompts(server) {
+    server.registerPrompt("agentroom_start_session", {
+        description: "Start a coding session with AgentRoom context, inbox processing, and safety boundaries.",
+        argsSchema: {
+            goal: z.string().optional().describe("The user's current coding goal")
+        }
+    }, async ({ goal }) => promptText(`Start this session with AgentRoom.
+
+Goal: ${goal ?? "No explicit goal provided."}
+
+Use the MCP tools in this order:
+1. Call setup_project if the project is not connected yet.
+2. Call start_agent_session with processInbox=true.
+3. If process_inbox answers anything, include the evidence in your working context.
+4. If blockers remain, call ask_question for the owning project.
+5. Before touching shared contracts or sensitive permissions, create a proposed decision or request access.
+6. Do not ask the human to run terminal commands unless MCP setup itself is missing.`));
+    server.registerPrompt("agentroom_resolve_blockers", {
+        description: "Resolve open AgentRoom questions and blockers conservatively.",
+        argsSchema: {}
+    }, async () => promptText(`Resolve AgentRoom blockers for this project.
+
+Use read_inbox first. For each open question addressed to this project:
+- Use process_inbox for evidence-backed automatic answers.
+- If evidence is insufficient, inspect list_visible_files and read_allowed_file.
+- If required evidence is hidden or ask-first, call request_access.
+- Never answer from a guess. Leave the question open when the evidence is not strong enough.`));
+    server.registerPrompt("agentroom_publish_contract", {
+        description: "Prepare a shared integration contract safely.",
+        argsSchema: {
+            contractGoal: z.string().optional().describe("What the contract should describe")
+        }
+    }, async ({ contractGoal }) => promptText(`Prepare an AgentRoom contract.
+
+Contract goal: ${contractGoal ?? "Not specified."}
+
+Use list_projects and summarize_room. Draft the smallest contract that describes the shared boundary. Call publish_contract only as draft. If the contract would be breaking or activate/deprecate behavior, record_decision first for human approval.`));
+    server.registerPrompt("agentroom_review_permissions", {
+        description: "Review project visibility and propose safe AgentRoom permissions.",
+        argsSchema: {}
+    }, async () => promptText(`Review AgentRoom permissions for this project.
+
+Use read_permissions and list_visible_files. Identify files that should be visible, ask-first, hidden, or always redacted. Do not call update_permissions until the human explicitly approves the final markdown.`));
+}
+function promptText(value) {
+    return {
+        messages: [
+            {
+                role: "user",
+                content: { type: "text", text: value }
+            }
+        ]
+    };
+}
+function buildMcpInbox(state, currentProjectId) {
+    return {
+        questions: state.questions.filter((question) => question.status === "open" && question.toProjectId === currentProjectId),
+        decisions: state.decisions.filter((decision) => decision.status === "proposed"),
+        accessRequests: state.accessRequests.filter((request) => request.status === "pending" && request.toProjectId === currentProjectId)
+    };
+}
+function text(value) {
+    return {
+        content: [{ type: "text", text: value }]
+    };
+}
+//# sourceMappingURL=server.js.map
