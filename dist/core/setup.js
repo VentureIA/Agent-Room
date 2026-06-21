@@ -99,7 +99,7 @@ function resolvePortablePackageSpec(explicitPackageSpec) {
     const npmExecSpec = process.env.npm_config_package?.trim();
     if (npmExecSpec && isReusableNpxPackageSpec(npmExecSpec))
         return npmExecSpec;
-    return "@venture-ia/agentroom";
+    return "github:VentureIA/Agent-Room";
 }
 function isReusableNpxPackageSpec(spec) {
     return (spec === "@venture-ia/agentroom" ||

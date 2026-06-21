@@ -77,8 +77,7 @@ npx -y github:VentureIA/Agent-Room init codex
 npx -y github:VentureIA/Agent-Room init all
 ```
 
-When launched from GitHub, AgentRoom automatically writes MCP configs that keep
-using the GitHub package:
+AgentRoom writes MCP configs that keep using the GitHub package by default:
 
 ```bash
 npx -y github:VentureIA/Agent-Room mcp
@@ -88,7 +87,7 @@ The package is also configured for npm as `@venture-ia/agentroom`. Once it is
 published, the npm command becomes:
 
 ```bash
-npx -y @venture-ia/agentroom init
+npx -y @venture-ia/agentroom init --package @venture-ia/agentroom
 ```
 
 For a specific agent client:

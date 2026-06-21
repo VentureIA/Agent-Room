@@ -82,6 +82,21 @@ describe("setupAgentRoom", () => {
       };
       expect(portableConfig.mcpServers.agentroom).toMatchObject({
         command: "npx",
+        args: ["-y", "github:VentureIA/Agent-Room", "mcp"],
+        cwd: project
+      });
+
+      const npmPortable = await installMcpConfig(project, {
+        client: "claude",
+        name: "Install Demo",
+        mcpCommandMode: "portable",
+        mcpPackageSpec: "@venture-ia/agentroom"
+      });
+      const npmConfig = JSON.parse(await readFile(npmPortable.configPath, "utf8")) as {
+        mcpServers: { agentroom: { command: string; args: string[]; cwd: string } };
+      };
+      expect(npmConfig.mcpServers.agentroom).toMatchObject({
+        command: "npx",
         args: ["-y", "@venture-ia/agentroom", "mcp"],
         cwd: project
       });
