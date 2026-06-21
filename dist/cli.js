@@ -58,6 +58,7 @@ program
     .option("--local-command", "write MCP config pointing to this local checkout instead of npx")
     .option("--package <spec>", "package spec used by generated npx MCP configs")
     .action(async (client, options) => {
+    printPixelBanner("init");
     const results = await installClients(parseMcpClients(client, "init"), options);
     printReady("AgentRoom ready", results);
 });
@@ -179,6 +180,7 @@ program
     .option("--local-command", "write MCP config pointing to this local checkout instead of npx")
     .option("--package <spec>", "package spec used by generated npx MCP configs")
     .action(async (inviteCode, options) => {
+    printPixelBanner("join");
     if (!inviteCode) {
         throw new Error("Join requires an invite code, for example: agentroom join ar_ABC123");
     }
@@ -523,6 +525,21 @@ async function installClients(clients, options) {
         }));
     }
     return results;
+}
+function printPixelBanner(mode) {
+    const action = mode === "init" ? "BOOT ROOM" : "JOIN ROOM";
+    console.log("");
+    console.log("  +------------------------------------------------+");
+    console.log("  |  ##   ##  ######  ######  ##   ##  ######     |");
+    console.log("  |  ##   ##  ##      ##      ###  ##    ##       |");
+    console.log("  |  #######  ####    ####    ## # ##    ##       |");
+    console.log("  |  ##   ##  ##      ##      ##  ###    ##       |");
+    console.log("  |  ##   ##  ######  ######  ##   ##    ##       |");
+    console.log("  |                                                |");
+    console.log("  |  A G E N T R O O M   ::   " + action.padEnd(9, " ") + "           |");
+    console.log("  |  [project] <---- questions ----> [project]     |");
+    console.log("  +------------------------------------------------+");
+    console.log("");
 }
 function printReady(heading, results) {
     const setup = results[0]?.setup;

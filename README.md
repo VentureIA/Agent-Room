@@ -1,3 +1,16 @@
+```text
+  +------------------------------------------------+
+  |  ##   ##  ######  ######  ##   ##  ######     |
+  |  ##   ##  ##      ##      ###  ##    ##       |
+  |  #######  ####    ####    ## # ##    ##       |
+  |  ##   ##  ##      ##      ##  ###    ##       |
+  |  ##   ##  ######  ######  ##   ##    ##       |
+  |                                                |
+  |  A G E N T R O O M   ::   BOOT ROOM           |
+  |  [project] <---- questions ----> [project]     |
+  +------------------------------------------------+
+```
+
 # AgentRoom
 
 AgentRoom is a local-first shared understanding layer for AI-coded projects.
@@ -26,6 +39,7 @@ AgentRoom creates a small local coordination layer:
 - each project has a local `.agentroom/` folder;
 - all connected projects share a room in `~/.agentroom/rooms/`;
 - Codex and Claude Code can access AgentRoom through MCP tools;
+- agents can coordinate task context automatically before coding;
 - the dashboard is only used for human approval and visibility;
 - no remote execution and no remote file editing are performed.
 
@@ -38,10 +52,12 @@ Implemented today:
 
 - local room creation and invite-code joining;
 - hosted relay rooms for multi-machine coordination;
+- published npm package: `agentroom-ai`;
 - project-local permission files;
 - Codex and Claude Code MCP config generation;
 - MCP tools for setup, status, questions, answers, decisions, contracts, access
-  requests, file collision alerts, summaries, and autonomous inbox processing;
+  requests, file collision alerts, summaries, direct answers, and autonomous
+  task-context coordination;
 - a local approval dashboard;
 - safe file reads limited by AgentRoom permissions;
 - autonomous answers when visible files contain enough evidence;
@@ -50,7 +66,7 @@ Implemented today:
 Not implemented yet:
 
 - full SaaS accounts/billing;
-- npm package publishing and release automation;
+- release automation;
 - external authentication beyond local launch tokens;
 - automatic code modification across projects.
 
@@ -61,49 +77,66 @@ Not implemented yet:
 - Codex or Claude Code if you want to use the MCP workflow
 - macOS, Linux, or another environment that can run Node.js
 
+## Fastest Start
+
+From the first project:
+
+```bash
+npx -y agentroom-ai init --name ProjectA
+```
+
+The command prints a pixel banner, prepares `.agentroom/`, installs MCP for
+Claude Code and Codex, and prints an invite code:
+
+```text
+Invite code: ar_XXXXXXX
+Projects can join with: npx -y agentroom-ai join ar_XXXXXXX
+```
+
+From the second project:
+
+```bash
+npx -y agentroom-ai join ar_XXXXXXX --name ProjectB
+```
+
+Restart Claude Code or Codex in both projects, then ask the agent:
+
+```text
+Use AgentRoom. Start the session and show connected projects.
+```
+
+For real tasks, the agent should use AgentRoom automatically:
+
+```text
+Use AgentRoom. Before coding, coordinate task context with connected projects.
+```
+
 ## One-Command Install
 
-From any project, run:
-
-```bash
-curl -fsSL https://agent-room.venture-ia.com/install.sh | sh
-```
-
-That command installs AgentRoom for both Claude Code and Codex, using the current
-folder name as the project name.
-
-For one client only:
-
-```bash
-curl -fsSL https://agent-room.venture-ia.com/install.sh | sh -s -- claude
-curl -fsSL https://agent-room.venture-ia.com/install.sh | sh -s -- codex
-```
-
-With an explicit project name:
-
-```bash
-curl -fsSL https://agent-room.venture-ia.com/install.sh | sh -s -- all Findy
-```
-
-The installer uses the npm package internally. AgentRoom writes MCP configs that
-keep using the same package:
-
-```bash
-npx -y agentroom-ai mcp
-```
-
-The npm package is published as `agentroom-ai`, so the direct npm command is:
+The direct npm command is the recommended install path:
 
 ```bash
 npx -y agentroom-ai init
 ```
 
-For a specific agent client:
+For one client only:
 
 ```bash
 npx -y agentroom-ai init claude
 npx -y agentroom-ai init codex
 npx -y agentroom-ai init all
+```
+
+With an explicit project name:
+
+```bash
+npx -y agentroom-ai init --name Findy
+```
+
+The generated MCP config uses a portable command:
+
+```bash
+npx -y agentroom-ai mcp
 ```
 
 This prepares `.agentroom/`, writes the agent guide, and installs the project MCP
@@ -112,10 +145,10 @@ config:
 - Claude Code: `.mcp.json`
 - Codex: `.codex/mcp.json`
 
-The generated MCP config uses a portable command:
+There is also a shell installer if you want a curl-based setup:
 
 ```bash
-npx -y agentroom-ai mcp
+curl -fsSL https://agent-room.venture-ia.com/install.sh | sh
 ```
 
 Restart Claude Code or Codex after running `init`, then ask:
@@ -126,7 +159,7 @@ Use AgentRoom. Start the session and connect this project.
 
 ## Quick Commands
 
-Create a room or prepare the first project:
+Prepare the first project and create the room:
 
 ```bash
 npx -y agentroom-ai init
@@ -138,10 +171,28 @@ Join another project to the same room:
 npx -y agentroom-ai join ar_XXXXXXX
 ```
 
+List connected projects:
+
+```bash
+npx -y agentroom-ai projects
+```
+
 Check whether the room and MCP client configs are ready:
 
 ```bash
 npx -y agentroom-ai doctor
+```
+
+Open the local dashboard:
+
+```bash
+npx -y agentroom-ai --no-open
+```
+
+Start the MCP server manually, if you need to debug a client config:
+
+```bash
+npx -y agentroom-ai mcp
 ```
 
 ## Install From GitHub
@@ -260,6 +311,12 @@ Recommended prompt inside the agent:
 Use AgentRoom. Start the session, process your inbox, and tell me what blockers remain.
 ```
 
+For autonomous cross-project work, use:
+
+```text
+Use AgentRoom. Coordinate task context automatically before coding, answer incoming questions, and ask connected projects for missing context when needed.
+```
+
 Useful MCP prompts exposed by AgentRoom:
 
 - `agentroom_start_session`
@@ -369,7 +426,7 @@ Start the local dashboard:
 
 ```bash
 cd /path/to/project
-node /path/to/Agent-Room/dist/cli.js --no-open
+npx -y agentroom-ai --no-open
 ```
 
 Open the printed local URL. It includes a local launch token used to activate the
@@ -435,7 +492,7 @@ The permission model is designed around:
 The CLI command:
 
 ```bash
-node /path/to/Agent-Room/dist/cli.js visible-files
+npx -y agentroom-ai visible-files
 ```
 
 shows which files are visible to AgentRoom for the current project.
@@ -443,7 +500,7 @@ shows which files are visible to AgentRoom for the current project.
 To read one allowed file through AgentRoom:
 
 ```bash
-node /path/to/Agent-Room/dist/cli.js read-file path/from/project/root.ts
+npx -y agentroom-ai read-file path/from/project/root.ts
 ```
 
 ## Local Data Layout
@@ -485,14 +542,14 @@ Project-local MCP configs:
 
 ## CLI Reference
 
-The examples below use `agentroom` as the binary name. You can run the same
-commands through npm with:
+The examples below use `agentroom` as the binary name. You can always run the
+same commands through npm with:
 
 ```bash
 npx -y agentroom-ai <command>
 ```
 
-For local development before npm publishing, replace `agentroom` with:
+For local development from a cloned checkout, replace `agentroom` with:
 
 ```bash
 node /path/to/Agent-Room/dist/cli.js
@@ -670,7 +727,7 @@ Developer A creates the remote room:
 
 ```bash
 cd /path/to/wordpress-project
-node /path/to/Agent-Room/dist/cli.js connect \
+npx -y agentroom-ai connect \
   --relay https://agentroom.example.com \
   --relay-token change-me \
   --name WordPress \
@@ -691,7 +748,7 @@ Developer B joins from another computer:
 
 ```bash
 cd /path/to/saas-project
-node /path/to/Agent-Room/dist/cli.js join ar_XXXXXXX \
+npx -y agentroom-ai join ar_XXXXXXX \
   --relay https://agentroom.example.com \
   --name SaaS \
   --agent Codex
@@ -700,9 +757,9 @@ node /path/to/Agent-Room/dist/cli.js join ar_XXXXXXX \
 After that, the normal commands work from either machine:
 
 ```bash
-node /path/to/Agent-Room/dist/cli.js projects
-node /path/to/Agent-Room/dist/cli.js ask --from SaaS --to WordPress --topic case_study.heroImage --question "Can heroImage be null?"
-node /path/to/Agent-Room/dist/cli.js process-inbox
+npx -y agentroom-ai projects
+npx -y agentroom-ai ask --from SaaS --to WordPress --topic case_study.heroImage --question "Can heroImage be null?"
+npx -y agentroom-ai process-inbox
 ```
 
 The relay stores shared coordination state. It does not read developer project
