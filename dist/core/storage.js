@@ -127,6 +127,36 @@ export class AgentRoomStore {
         await this.appendEvent(room.id, agent.id, "FYI", { event: "project_connected", projectId: project.id });
         return project;
     }
+    async connectRemoteProject(input) {
+        const room = await this.initialize();
+        const projectPath = input.path ?? `remote://${slugify(input.name)}`;
+        const existing = this.openDb().prepare("select * from projects where path = ? limit 1").get(projectPath);
+        if (existing) {
+            return this.updateExistingProject(mapProject(existing), input);
+        }
+        const project = {
+            id: createId("project"),
+            name: input.name,
+            path: projectPath,
+            role: input.role ?? "Remote project",
+            stack: input.stack ?? [],
+            agentKind: input.agentKind ?? "Codex",
+            humanOwner: input.humanOwner ?? "Human owner",
+            createdAt: nowIso()
+        };
+        const db = this.openDb();
+        db.prepare("insert into projects (id, name, path, role, stack_json, agent_kind, human_owner, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)").run(project.id, project.name, project.path, project.role, JSON.stringify(project.stack), project.agentKind, project.humanOwner, project.createdAt);
+        const agent = {
+            id: createId("agent"),
+            projectId: project.id,
+            name: `${project.agentKind} for ${project.name}`,
+            kind: project.agentKind,
+            status: "active"
+        };
+        db.prepare("insert into agents (id, project_id, name, kind, status) values (?, ?, ?, ?, ?)").run(agent.id, agent.projectId, agent.name, agent.kind, agent.status);
+        await this.appendEvent(room.id, agent.id, "FYI", { event: "remote_project_connected", projectId: project.id });
+        return project;
+    }
     async getState() {
         const room = await this.initialize();
         const db = this.openDb();
@@ -287,6 +317,20 @@ export class AgentRoomStore {
             throw new Error(`No active agent registered for project ${currentProject.name}.`);
         return this.appendEvent(room.id, String(agent.id), "TEST_RESULT", {
             projectId: currentProject.id,
+            status: input.status,
+            command: input.command,
+            summary: input.summary,
+            affects: input.affects ?? []
+        });
+    }
+    async reportTestResultForProject(projectId, input) {
+        const room = await this.initialize();
+        this.assertProjectExists(projectId);
+        const agent = this.openDb().prepare("select * from agents where project_id = ? limit 1").get(projectId);
+        if (!agent)
+            throw new Error(`No active agent registered for project ${projectId}.`);
+        return this.appendEvent(room.id, String(agent.id), "TEST_RESULT", {
+            projectId,
             status: input.status,
             command: input.command,
             summary: input.summary,

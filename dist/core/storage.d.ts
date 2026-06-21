@@ -43,6 +43,14 @@ export declare class AgentRoomStore {
         humanOwner?: string;
         path?: string;
     }): Promise<Project>;
+    connectRemoteProject(input: {
+        name: string;
+        role?: string;
+        agentKind?: string;
+        humanOwner?: string;
+        path?: string;
+        stack?: string[];
+    }): Promise<Project>;
     getState(): Promise<RoomState>;
     getCurrentProject(): Promise<Project>;
     getProjectByReference(reference: string): Promise<Project>;
@@ -78,6 +86,12 @@ export declare class AgentRoomStore {
         status: "approved" | "denied";
     }): Promise<AccessRequest>;
     reportTestResult(input: {
+        status: "passed" | "failed" | "skipped";
+        command: string;
+        summary: string;
+        affects?: string[];
+    }): Promise<Message>;
+    reportTestResultForProject(projectId: string, input: {
         status: "passed" | "failed" | "skipped";
         command: string;
         summary: string;

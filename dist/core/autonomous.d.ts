@@ -1,4 +1,4 @@
-import type { AccessRequest, Project } from "./types.js";
+import type { AccessRequest, Project, Question } from "./types.js";
 import { AgentRoomStore } from "./storage.js";
 export type ProcessInboxOptions = {
     maxQuestions?: number;
@@ -18,4 +18,20 @@ export type ProcessInboxResult = {
         accessRequest?: AccessRequest;
     }>;
 };
+type Evidence = {
+    file: string;
+    line: number;
+    text: string;
+};
+export type EvidenceReader = {
+    listVisibleFiles(): Promise<string[]>;
+    readAllowedProjectFile(relativePath: string): Promise<string>;
+};
 export declare function processInboxAutonomously(store: AgentRoomStore, options?: ProcessInboxOptions): Promise<ProcessInboxResult>;
+export declare function draftAnswerFromEvidence(reader: EvidenceReader, question: Question, project: Project, maxFiles: number): Promise<{
+    answer: string;
+    suggestedResolution: string;
+    confidence: "medium" | "high";
+    evidence: Evidence[];
+} | undefined>;
+export {};

@@ -27,6 +27,11 @@ type Evidence = {
   text: string;
 };
 
+export type EvidenceReader = {
+  listVisibleFiles(): Promise<string[]>;
+  readAllowedProjectFile(relativePath: string): Promise<string>;
+};
+
 export async function processInboxAutonomously(
   store: AgentRoomStore,
   options: ProcessInboxOptions = {}
@@ -39,7 +44,7 @@ export async function processInboxAutonomously(
 
   const result: ProcessInboxResult = { project: currentProject, answered: [], skipped: [] };
   for (const question of questions) {
-    const draft = await draftAnswer(store, question, currentProject, options.maxFiles ?? 30);
+    const draft = await draftAnswerFromEvidence(store, question, currentProject, options.maxFiles ?? 30);
     if (!draft) {
       result.skipped.push({
         questionId: question.id,
@@ -65,20 +70,20 @@ export async function processInboxAutonomously(
   return result;
 }
 
-async function draftAnswer(
-  store: AgentRoomStore,
+export async function draftAnswerFromEvidence(
+  reader: EvidenceReader,
   question: Question,
   project: Project,
   maxFiles: number
 ): Promise<{ answer: string; suggestedResolution: string; confidence: "medium" | "high"; evidence: Evidence[] } | undefined> {
-  const visibleFiles = await store.listVisibleFiles();
+  const visibleFiles = await reader.listVisibleFiles();
   const terms = extractTerms(question);
   const rankedFiles = rankFiles(visibleFiles, terms).slice(0, maxFiles);
   const evidence: Evidence[] = [];
 
   for (const file of rankedFiles) {
     try {
-      const content = await store.readAllowedProjectFile(file);
+      const content = await reader.readAllowedProjectFile(file);
       evidence.push(...extractEvidence(file, content, terms));
     } catch {
       continue;

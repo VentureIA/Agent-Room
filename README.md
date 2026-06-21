@@ -37,6 +37,7 @@ with multiple projects and MCP-enabled coding agents.
 Implemented today:
 
 - local room creation and invite-code joining;
+- hosted relay rooms for multi-machine coordination;
 - project-local permission files;
 - Codex and Claude Code MCP config generation;
 - MCP tools for setup, status, questions, answers, decisions, contracts, access
@@ -48,8 +49,7 @@ Implemented today:
 
 Not implemented yet:
 
-- hosted SaaS relay;
-- real-time cloud sync between machines;
+- full SaaS accounts/billing;
 - package publishing to npm;
 - external authentication beyond local launch tokens;
 - automatic code modification across projects.
@@ -479,6 +479,109 @@ Can heroImage be null?
 Put the answer in `content/case-studies.json` and let `process-inbox` answer
 from evidence. Then repeat the same workflow from inside Codex or Claude Code
 through the MCP tools.
+
+## Multi-Machine Mode With A Hosted Relay
+
+For two developers on two different computers, run the hosted relay on your own
+server, then connect each project to the relay.
+
+Start the relay locally for a quick test:
+
+```bash
+npm run build
+AGENTROOM_RELAY_ADMIN_TOKEN=change-me \
+AGENTROOM_RELAY_DATA_DIR=.agentroom-relay \
+PORT=4318 \
+npm run serve:relay
+```
+
+Developer A creates the remote room:
+
+```bash
+cd /path/to/wordpress-project
+node /path/to/Agent-Room/dist/cli.js connect \
+  --relay https://agentroom.example.com \
+  --relay-token change-me \
+  --name WordPress \
+  --agent Claude
+```
+
+Developer B joins from another computer:
+
+```bash
+cd /path/to/saas-project
+node /path/to/Agent-Room/dist/cli.js join ar_XXXXXXX \
+  --relay https://agentroom.example.com \
+  --name SaaS \
+  --agent Codex
+```
+
+After that, the normal commands work from either machine:
+
+```bash
+node /path/to/Agent-Room/dist/cli.js projects
+node /path/to/Agent-Room/dist/cli.js ask --from SaaS --to WordPress --topic case_study.heroImage --question "Can heroImage be null?"
+node /path/to/Agent-Room/dist/cli.js process-inbox
+```
+
+The relay stores shared coordination state. It does not read developer project
+files. Each agent reads only its own local files through `.agentroom/permissions.md`
+and sends answers, decisions, contracts, and access requests to the relay.
+
+### Deploy The Relay On Dokploy
+
+AgentRoom includes a `Dockerfile`, so the recommended Dokploy path is an
+Application using Dockerfile build. Dokploy supports Dockerfile build types,
+service-level environment variables, and domain routing through its UI.
+
+1. Push this repository to GitHub.
+2. In Dokploy, create a new Application.
+3. Select the GitHub repository `VentureIA/Agent-Room`.
+4. Use branch `main`.
+5. Select Dockerfile build.
+6. Set the exposed/container port to `4318`.
+7. Add a persistent volume:
+
+```text
+/data
+```
+
+8. Add environment variables:
+
+```text
+NODE_ENV=production
+PORT=4318
+HOST=0.0.0.0
+AGENTROOM_RELAY_DATA_DIR=/data
+AGENTROOM_RELAY_ADMIN_TOKEN=<generate-a-long-random-secret>
+```
+
+9. Add your domain in Dokploy, for example:
+
+```text
+agentroom.example.com
+```
+
+10. Deploy.
+11. Verify:
+
+```bash
+curl https://agentroom.example.com/healthz
+```
+
+Expected response:
+
+```json
+{"ok":true,"service":"agentroom-relay"}
+```
+
+Then use that URL in `connect --relay` and `join --relay`.
+
+Dokploy references:
+
+- Dockerfile build type: https://docs.dokploy.com/docs/core/applications/build-type
+- Environment variables: https://docs.dokploy.com/docs/core/variables
+- Production deployment flow: https://docs.dokploy.com/docs/core/applications/going-production
 
 ## Repository
 

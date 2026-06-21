@@ -5,6 +5,7 @@ import { z } from "zod";
 import { processInboxAutonomously } from "../core/autonomous.js";
 import { installMcpConfig } from "../core/install.js";
 import { findRoomByInvite, readProjectLink } from "../core/registry.js";
+import { connectRemoteRoom, joinRemoteRoom, RemoteAgentRoomClient } from "../core/remote.js";
 import { setupAgentRoom } from "../core/setup.js";
 import { AgentRoomStore } from "../core/storage.js";
 import type { RoomState } from "../core/types.js";
@@ -17,6 +18,7 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
   });
 
   const requireStore = () => AgentRoomStore.requireLinkedProject(root);
+  const requireClient = async () => (await RemoteAgentRoomClient.forLinkedProject(root)) ?? (await AgentRoomStore.requireLinkedProject(root));
   let dashboardRelay: Awaited<ReturnType<typeof startRelay>> | undefined;
 
   registerAgentRoomPrompts(server);
@@ -97,10 +99,16 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
         name: z.string().optional(),
         role: z.string().optional(),
         agentKind: z.string().default("Codex"),
-        humanOwner: z.string().default("Human owner")
+        humanOwner: z.string().default("Human owner"),
+        relayUrl: z.string().url().optional(),
+        relayAdminToken: z.string().optional()
       }
     },
     async (input) => {
+      if (input.relayUrl) {
+        const connected = await connectRemoteRoom(root, input.relayUrl, input.relayAdminToken ?? process.env.AGENTROOM_RELAY_ADMIN_TOKEN, input);
+        return text(JSON.stringify(connected, null, 2));
+      }
       const connected = await AgentRoomStore.createSharedRoom(root, input);
       return text(
         JSON.stringify(
@@ -128,10 +136,15 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
         name: z.string().optional(),
         role: z.string().optional(),
         agentKind: z.string().default("Codex"),
-        humanOwner: z.string().default("Human owner")
+        humanOwner: z.string().default("Human owner"),
+        relayUrl: z.string().url().optional()
       }
     },
     async (input) => {
+      if (input.relayUrl) {
+        const joined = await joinRemoteRoom(root, input.relayUrl, input.inviteCode, input);
+        return text(JSON.stringify(joined, null, 2));
+      }
       const record = await findRoomByInvite(input.inviteCode);
       if (!record) throw new Error(`No local AgentRoom invite found for ${input.inviteCode}.`);
       const joined = await AgentRoomStore.joinSharedRoom(root, record, input);
@@ -157,7 +170,7 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
       description: "Return the AgentRoom project associated with the current MCP server working directory.",
       inputSchema: {}
     },
-    async () => text(JSON.stringify(await (await requireStore()).getCurrentProject(), null, 2))
+    async () => text(JSON.stringify(await (await requireClient()).getCurrentProject(), null, 2))
   );
 
   server.registerTool(
@@ -168,8 +181,8 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
       inputSchema: {}
     },
     async () => {
-      const store = await requireStore();
-      const state = await store.getState();
+      const client = await requireClient();
+      const state = await client.getState();
       const link = await readProjectLink(root);
       return text(
         JSON.stringify(
@@ -182,7 +195,7 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
               decisions: state.decisions.length,
               contracts: state.contracts.length
             },
-            linkedRoom: link?.roomDir
+            linkedRoom: link?.mode === "remote" ? link.relayUrl : link?.roomDir
           },
           null,
           2
@@ -231,9 +244,11 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
       }
     },
     async (input) => {
-      const store = await requireStore();
+      const store = await requireClient();
       const processed = input.processInbox
-        ? await processInboxAutonomously(store, { maxQuestions: input.maxQuestions, maxFiles: input.maxFiles })
+        ? store instanceof RemoteAgentRoomClient
+          ? await store.processInboxAutonomously({ maxQuestions: input.maxQuestions, maxFiles: input.maxFiles })
+          : await processInboxAutonomously(store, { maxQuestions: input.maxQuestions, maxFiles: input.maxFiles })
         : undefined;
       const state = await store.getState();
       const currentProject = await store.getCurrentProject();
@@ -262,7 +277,7 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
       inputSchema: {}
     },
     async () => {
-      const state = await (await requireStore()).getState();
+      const state = await (await requireClient()).getState();
       return text(JSON.stringify(state.projects, null, 2));
     }
   );
@@ -275,6 +290,8 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
       inputSchema: {}
     },
     async () => {
+      const remote = await RemoteAgentRoomClient.forLinkedProject(root);
+      if (remote) return text(remote.link.inviteCode);
       const room = await (await requireStore()).initialize();
       return text(room.inviteCode);
     }
@@ -288,7 +305,7 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
       inputSchema: {}
     },
     async () => {
-      const store = await requireStore();
+      const store = await requireClient();
       const state = await store.getState();
       return text(state.summary);
     }
@@ -306,7 +323,11 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
         humanOwner: z.string().default("Human owner")
       }
     },
-    async (input) => text(JSON.stringify(await (await requireStore()).connectProject(input), null, 2))
+    async (input) => {
+      const remote = await RemoteAgentRoomClient.forLinkedProject(root);
+      if (remote) return text(JSON.stringify(await remote.getCurrentProject(), null, 2));
+      return text(JSON.stringify(await (await requireStore()).connectProject(input), null, 2));
+    }
   );
 
   server.registerTool(
@@ -323,19 +344,27 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
       }
     },
     async (input) => {
-      const store = await requireStore();
+      const store = await requireClient();
       const currentProject = await store.getCurrentProject();
       const toProject = await store.getProjectByReference(input.toProject);
       return text(
         JSON.stringify(
-          await store.askQuestion({
-            fromProjectId: currentProject.id,
-            toProjectId: toProject.id,
-            topic: input.topic,
-            question: input.question,
-            impact: input.impact,
-            urgency: input.urgency
-          }),
+          store instanceof RemoteAgentRoomClient
+            ? await store.askQuestion({
+                toProjectId: toProject.id,
+                topic: input.topic,
+                question: input.question,
+                impact: input.impact,
+                urgency: input.urgency
+              })
+            : await store.askQuestion({
+                fromProjectId: currentProject.id,
+                toProjectId: toProject.id,
+                topic: input.topic,
+                question: input.question,
+                impact: input.impact,
+                urgency: input.urgency
+              }),
           null,
           2
         )
@@ -356,7 +385,7 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
       }
     },
     async (input) => {
-      const store = await requireStore();
+      const store = await requireClient();
       const currentProject = await store.getCurrentProject();
       return text(JSON.stringify(await store.answerQuestionForProject(currentProject.id, input), null, 2));
     }
@@ -375,7 +404,7 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
       }
     },
     async (input) => {
-      const store = await requireStore();
+      const store = await requireClient();
       return text(
         JSON.stringify(
           await store.recordDecision({
@@ -412,7 +441,7 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
       }
     },
     async (input) => {
-      const store = await requireStore();
+      const store = await requireClient();
       const currentProject = await store.getCurrentProject();
       if (input.providerProjectId !== currentProject.id && input.consumerProjectId !== currentProject.id) {
         throw new Error("Current project must be the provider or consumer for contracts published through MCP.");
@@ -429,7 +458,7 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
       inputSchema: {}
     },
     async () => {
-      const store = await requireStore();
+      const store = await requireClient();
       const state = await store.getState();
       const currentProject = await store.getCurrentProject();
       return text(JSON.stringify(buildMcpInbox(state, currentProject.id), null, 2));
@@ -446,7 +475,7 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
       }
     },
     async (input) => {
-      const store = await requireStore();
+      const store = await requireClient();
       const files = await store.listVisibleFiles();
       return text(JSON.stringify(files.slice(0, input.limit), null, 2));
     }
@@ -459,7 +488,11 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
       description: "Read the current project's AgentRoom permissions markdown.",
       inputSchema: {}
     },
-    async () => text(await (await requireStore()).readPermissionsMarkdown())
+    async () => {
+      const remote = await RemoteAgentRoomClient.forLinkedProject(root);
+      if (remote) return text(await remote.readPermissionsMarkdown());
+      return text(await (await requireStore()).readPermissionsMarkdown());
+    }
   );
 
   server.registerTool(
@@ -473,7 +506,7 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
       }
     },
     async (input) => {
-      const store = await requireStore();
+      const store = await requireClient();
       const currentProject = await store.getCurrentProject();
       return text(
         JSON.stringify(
@@ -501,7 +534,7 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
         path: z.string()
       }
     },
-    async (input) => text(await (await requireStore()).readAllowedProjectFile(input.path))
+    async (input) => text(await (await requireClient()).readAllowedProjectFile(input.path))
   );
 
   server.registerTool(
@@ -516,7 +549,7 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
       }
     },
     async (input) => {
-      const store = await requireStore();
+      const store = await requireClient();
       const currentProject = await store.getCurrentProject();
       return text(
         JSON.stringify(
@@ -544,7 +577,13 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
         maxFiles: z.number().int().positive().max(200).default(30)
       }
     },
-    async (input) => text(JSON.stringify(await processInboxAutonomously(await requireStore(), input), null, 2))
+    async (input) => {
+      const client = await requireClient();
+      const result = client instanceof RemoteAgentRoomClient
+        ? await client.processInboxAutonomously(input)
+        : await processInboxAutonomously(client, input);
+      return text(JSON.stringify(result, null, 2));
+    }
   );
 
   server.registerTool(
@@ -559,7 +598,7 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
         affects: z.array(z.string()).default([])
       }
     },
-    async (input) => text(JSON.stringify(await (await requireStore()).reportTestResult(input), null, 2))
+    async (input) => text(JSON.stringify(await (await requireClient()).reportTestResult(input), null, 2))
   );
 
   const transport = new StdioServerTransport();

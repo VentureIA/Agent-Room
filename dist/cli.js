@@ -6,8 +6,10 @@ import { installMcpConfig } from "./core/install.js";
 import { setupAgentRoom } from "./core/setup.js";
 import { AgentRoomStore } from "./core/storage.js";
 import { startRelay } from "./server/relay.js";
+import { startHostedRelay } from "./server/hosted-relay.js";
 import { runMcpServer } from "./mcp/server.js";
 import { findRoomByInvite, getAgentRoomHome, readProjectLink } from "./core/registry.js";
+import { connectRemoteRoom, joinRemoteRoom, RemoteAgentRoomClient } from "./core/remote.js";
 import { answerSchema, questionSchema } from "./core/types.js";
 const program = new Command();
 program
@@ -94,12 +96,27 @@ program
 });
 program
     .command("connect")
-    .description("Connect this project to a local AgentRoom.")
+    .description("Connect this project to a local AgentRoom or hosted relay.")
     .option("--name <name>", "project display name")
     .option("--role <role>", "project role")
     .option("--agent <agentKind>", "primary agent kind", "Codex")
     .option("--owner <humanOwner>", "human owner", "Human owner")
+    .option("--relay <url>", "hosted AgentRoom relay URL")
+    .option("--relay-token <token>", "hosted relay admin token for creating rooms")
     .action(async (options) => {
+    if (options.relay) {
+        const connected = await connectRemoteRoom(process.cwd(), options.relay, options.relayToken ?? process.env.AGENTROOM_RELAY_ADMIN_TOKEN, {
+            name: options.name,
+            role: options.role,
+            agentKind: options.agent,
+            humanOwner: options.owner
+        });
+        console.log(`Connected ${connected.project.name} to remote AgentRoom.`);
+        console.log(`Invite code: ${connected.inviteCode}`);
+        console.log(`Relay: ${connected.relayUrl}`);
+        console.log(`Project files: ${process.cwd()}/.agentroom`);
+        return;
+    }
     const { store, project, room, record } = await AgentRoomStore.createSharedRoom(process.cwd(), {
         name: options.name,
         role: options.role,
@@ -113,15 +130,27 @@ program
 });
 program
     .command("join")
-    .description("Join an existing local room with an invite code.")
+    .description("Join an existing local or hosted room with an invite code.")
     .argument("[inviteCode]", "invite code")
     .option("--name <name>", "project display name")
     .option("--role <role>", "project role")
     .option("--agent <agentKind>", "primary agent kind", "Codex")
     .option("--owner <humanOwner>", "human owner", "Human owner")
+    .option("--relay <url>", "hosted AgentRoom relay URL")
     .action(async (inviteCode, options) => {
     if (!inviteCode) {
         throw new Error("Join requires an invite code, for example: agentroom join ar_ABC123");
+    }
+    if (options.relay) {
+        const joined = await joinRemoteRoom(process.cwd(), options.relay, inviteCode, {
+            name: options.name,
+            role: options.role,
+            agentKind: options.agent,
+            humanOwner: options.owner
+        });
+        console.log(`Joined remote AgentRoom via ${inviteCode} as ${joined.project.name}.`);
+        console.log(`Relay: ${joined.relayUrl}`);
+        return;
     }
     const record = await findRoomByInvite(inviteCode);
     if (!record) {
@@ -138,16 +167,29 @@ program
 });
 program
     .command("invite")
-    .description("Print the local room invite code.")
+    .description("Print the current room invite code.")
     .action(async () => {
+    const remote = await RemoteAgentRoomClient.forLinkedProject();
+    if (remote) {
+        console.log(remote.link.inviteCode);
+        return;
+    }
     const store = await AgentRoomStore.requireLinkedProject();
     const room = await store.initialize();
     console.log(room.inviteCode);
 });
 program
     .command("status")
-    .description("Show local AgentRoom status.")
+    .description("Show AgentRoom status.")
     .action(async () => {
+    const remote = await RemoteAgentRoomClient.forLinkedProject();
+    if (remote) {
+        const state = await remote.getState();
+        console.log(`${state.room.name} (${state.room.id})`);
+        console.log(`${state.projects.length} project(s), ${state.questions.length} question(s), ${state.decisions.length} decision(s), ${state.contracts.length} contract(s).`);
+        console.log(`Linked relay: ${remote.link.relayUrl}`);
+        return;
+    }
     const store = await AgentRoomStore.requireLinkedProject();
     const state = await store.getState();
     console.log(`${state.room.name} (${state.room.id})`);
@@ -160,6 +202,14 @@ program
     .command("projects")
     .description("List projects connected to the current AgentRoom.")
     .action(async () => {
+    const remote = await RemoteAgentRoomClient.forLinkedProject();
+    if (remote) {
+        const state = await remote.getState();
+        for (const project of state.projects) {
+            console.log(`${project.id}\t${project.name}\t${project.role}`);
+        }
+        return;
+    }
     const store = await AgentRoomStore.requireLinkedProject();
     const state = await store.getState();
     for (const project of state.projects) {
@@ -170,21 +220,17 @@ program
     .command("inbox")
     .description("List open questions and proposed decisions.")
     .action(async () => {
+    const remote = await RemoteAgentRoomClient.forLinkedProject();
+    if (remote) {
+        const state = await remote.getState();
+        const currentProject = await remote.getCurrentProject();
+        printInbox(state, currentProject.id);
+        return;
+    }
     const store = await AgentRoomStore.requireLinkedProject();
     const state = await store.getState();
     const currentProject = await store.getCurrentProject();
-    const openQuestions = state.questions.filter((question) => question.status === "open" && question.toProjectId === currentProject.id);
-    const proposedDecisions = state.decisions.filter((decision) => decision.status === "proposed");
-    if (openQuestions.length === 0 && proposedDecisions.length === 0) {
-        console.log("Inbox empty.");
-        return;
-    }
-    for (const question of openQuestions) {
-        console.log(`QUESTION ${question.id} [${question.urgency}] ${question.topic}: ${question.question}`);
-    }
-    for (const decision of proposedDecisions) {
-        console.log(`DECISION ${decision.id} [${decision.status}] ${decision.title}: ${decision.reason}`);
-    }
+    printInbox(state, currentProject.id);
 });
 program
     .command("ask")
@@ -196,6 +242,24 @@ program
     .option("--impact <impact>", "impact if unresolved", "Needs clarification before integration work continues.")
     .option("--urgency <urgency>", "low, normal, or blocking", "normal")
     .action(async (options) => {
+    const remote = await RemoteAgentRoomClient.forLinkedProject();
+    if (remote) {
+        const currentProject = await remote.getCurrentProject();
+        const to = await remote.getProjectByReference(options.to);
+        const from = await remote.getProjectByReference(options.from);
+        if (from.id !== currentProject.id) {
+            throw new Error(`This project can only ask as ${currentProject.name}. Run the command from ${from.name} to ask as that project.`);
+        }
+        const question = await remote.askQuestion({
+            toProjectId: to.id,
+            topic: options.topic,
+            question: options.question,
+            impact: options.impact,
+            urgency: options.urgency
+        });
+        console.log(`Question recorded: ${question.id}`);
+        return;
+    }
     const store = await AgentRoomStore.requireLinkedProject();
     const state = await store.getState();
     const currentProject = await store.getCurrentProject();
@@ -220,26 +284,33 @@ program
     .option("--max-questions <count>", "maximum open questions to process", parsePositiveInt, 5)
     .option("--max-files <count>", "maximum visible files to inspect per question", parsePositiveInt, 30)
     .action(async (options) => {
+    const remote = await RemoteAgentRoomClient.forLinkedProject();
+    if (remote) {
+        const result = await remote.processInboxAutonomously({
+            maxQuestions: options.maxQuestions,
+            maxFiles: options.maxFiles
+        });
+        printProcessInboxResult(result);
+        return;
+    }
     const store = await AgentRoomStore.requireLinkedProject();
     const result = await processInboxAutonomously(store, {
         maxQuestions: options.maxQuestions,
         maxFiles: options.maxFiles
     });
-    console.log(`Processed inbox for ${result.project.name}.`);
-    for (const item of result.answered) {
-        console.log(`ANSWERED ${item.questionId} [${item.confidence}] via ${item.evidenceFiles.join(", ")}`);
-    }
-    for (const item of result.skipped) {
-        console.log(`SKIPPED ${item.questionId}: ${item.reason}`);
-    }
-    if (result.answered.length === 0 && result.skipped.length === 0) {
-        console.log("Inbox empty.");
-    }
+    printProcessInboxResult(result);
 });
 program
     .command("visible-files")
     .description("List files visible to AgentRoom for this project.")
     .action(async () => {
+    const remote = await RemoteAgentRoomClient.forLinkedProject();
+    if (remote) {
+        const files = await remote.listVisibleFiles();
+        for (const file of files)
+            console.log(file);
+        return;
+    }
     const store = await AgentRoomStore.requireLinkedProject();
     const files = await store.listVisibleFiles();
     for (const file of files)
@@ -250,6 +321,11 @@ program
     .description("Read a visible project file through AgentRoom permissions and redaction.")
     .argument("<path>", "project-relative file path")
     .action(async (relativePath) => {
+    const remote = await RemoteAgentRoomClient.forLinkedProject();
+    if (remote) {
+        console.log(await remote.readAllowedProjectFile(relativePath));
+        return;
+    }
     const store = await AgentRoomStore.requireLinkedProject();
     console.log(await store.readAllowedProjectFile(relativePath));
 });
@@ -261,6 +337,18 @@ program
     .option("--resolution <resolution>", "suggested resolution")
     .option("--confidence <confidence>", "low, medium, or high", "medium")
     .action(async (questionId, options) => {
+    const remote = await RemoteAgentRoomClient.forLinkedProject();
+    if (remote) {
+        const currentProject = await remote.getCurrentProject();
+        const question = await remote.answerQuestionForProject(currentProject.id, answerSchema.parse({
+            questionId,
+            answer: options.answer,
+            suggestedResolution: options.resolution,
+            confidence: options.confidence
+        }));
+        console.log(`Question answered: ${question.id}`);
+        return;
+    }
     const store = await AgentRoomStore.requireLinkedProject();
     const currentProject = await store.getCurrentProject();
     const question = await store.answerQuestionForProject(currentProject.id, answerSchema.parse({
@@ -275,6 +363,12 @@ program
     .command("summary")
     .description("Print the human-readable AgentRoom summary.")
     .action(async () => {
+    const remote = await RemoteAgentRoomClient.forLinkedProject();
+    if (remote) {
+        const state = await remote.getState();
+        console.log(state.summary);
+        return;
+    }
     const store = await AgentRoomStore.requireLinkedProject();
     const state = await store.getState();
     console.log(state.summary);
@@ -283,6 +377,19 @@ program
     .command("doctor")
     .description("Run local diagnostics.")
     .action(async () => {
+    const remote = await RemoteAgentRoomClient.forLinkedProject();
+    if (remote) {
+        const state = await remote.getState();
+        console.log("AgentRoom doctor");
+        console.log(`- AgentRoom home: ${getAgentRoomHome()}`);
+        console.log(`- Relay: ${remote.link.relayUrl}`);
+        console.log(`- Room: ${state.room.id}`);
+        console.log(`- Project directory: ${process.cwd()}/.agentroom`);
+        console.log(`- Projects connected: ${state.projects.length}`);
+        console.log("- Remote command execution: disabled");
+        console.log("- Remote file edits: disabled");
+        return;
+    }
     const store = await AgentRoomStore.requireLinkedProject();
     const state = await store.getState();
     console.log("AgentRoom doctor");
@@ -298,9 +405,21 @@ program
     .command("permissions")
     .description("Show the local AgentRoom permissions file path.")
     .action(async () => {
-    const store = await AgentRoomStore.requireLinkedProject();
-    await store.initialize();
-    console.log(`${store.projectAgentRoomDir}/permissions.md`);
+    console.log(`${process.cwd()}/.agentroom/permissions.md`);
+});
+program
+    .command("serve-relay")
+    .description("Start the hosted AgentRoom relay server for multi-machine rooms.")
+    .option("-p, --port <port>", "relay port", process.env.PORT ?? "4318")
+    .option("--host <host>", "listen host", process.env.HOST ?? "0.0.0.0")
+    .option("--data-dir <path>", "persistent relay data directory")
+    .action(async (options) => {
+    const { url } = await startHostedRelay({
+        port: Number(options.port),
+        host: options.host,
+        dataDir: options.dataDir
+    });
+    console.log(`AgentRoom hosted relay is running: ${url}`);
 });
 program
     .command("mcp")
@@ -327,5 +446,31 @@ function parsePositiveInt(value) {
         throw new Error(`Expected a positive integer, got ${value}`);
     }
     return parsed;
+}
+function printInbox(state, currentProjectId) {
+    const openQuestions = state.questions.filter((question) => question.status === "open" && question.toProjectId === currentProjectId);
+    const proposedDecisions = state.decisions.filter((decision) => decision.status === "proposed");
+    if (openQuestions.length === 0 && proposedDecisions.length === 0) {
+        console.log("Inbox empty.");
+        return;
+    }
+    for (const question of openQuestions) {
+        console.log(`QUESTION ${question.id} [${question.urgency}] ${question.topic}: ${question.question}`);
+    }
+    for (const decision of proposedDecisions) {
+        console.log(`DECISION ${decision.id} [${decision.status}] ${decision.title}: ${decision.reason}`);
+    }
+}
+function printProcessInboxResult(result) {
+    console.log(`Processed inbox for ${result.project.name}.`);
+    for (const item of result.answered) {
+        console.log(`ANSWERED ${item.questionId} [${item.confidence}] via ${item.evidenceFiles.join(", ")}`);
+    }
+    for (const item of result.skipped) {
+        console.log(`SKIPPED ${item.questionId}: ${item.reason}`);
+    }
+    if (result.answered.length === 0 && result.skipped.length === 0) {
+        console.log("Inbox empty.");
+    }
 }
 //# sourceMappingURL=cli.js.map

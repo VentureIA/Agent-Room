@@ -68,6 +68,7 @@ export async function readProjectLink(projectRoot) {
 }
 export async function writeProjectLink(projectRoot, record) {
     const link = {
+        mode: "local",
         roomId: record.id,
         inviteCode: record.inviteCode,
         roomDir: record.roomDir,
@@ -77,9 +78,26 @@ export async function writeProjectLink(projectRoot, record) {
     await writeJson(getProjectLinkPath(projectRoot), link);
     return link;
 }
+export async function writeRemoteProjectLink(projectRoot, input) {
+    const link = {
+        mode: "remote",
+        roomId: input.roomId,
+        inviteCode: input.inviteCode,
+        relayUrl: normalizeRelayUrl(input.relayUrl),
+        projectId: input.projectId,
+        projectToken: input.projectToken,
+        linkedAt: new Date().toISOString()
+    };
+    await writeJson(getProjectLinkPath(projectRoot), link);
+    return link;
+}
 export async function resolveLinkedRoom(projectRoot, home = getAgentRoomHome()) {
     const link = await readProjectLink(projectRoot);
     if (!link)
+        return undefined;
+    if (link.mode === "remote" || (link.relayUrl && link.projectToken))
+        return undefined;
+    if (!link.roomDir)
         return undefined;
     const registered = await findRoomById(link.roomId, home);
     assertInsideHome(link.roomDir, home);
@@ -93,6 +111,12 @@ export async function resolveLinkedRoom(projectRoot, home = getAgentRoomHome()) 
         lastOpenedAt: link.linkedAt
     };
     return registered ?? ((await isValidRoomRecord(fallback, home)) ? fallback : undefined);
+}
+function normalizeRelayUrl(relayUrl) {
+    const parsed = new URL(relayUrl);
+    parsed.hash = "";
+    parsed.search = "";
+    return parsed.toString().replace(/\/$/, "");
 }
 export async function ensureRoomDirectories(roomDir) {
     await ensureSafeDirectory(roomDir);

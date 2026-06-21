@@ -2,10 +2,24 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureSafeDirectory, exists, writeJson, writeTextFile } from "./files.js";
-import { resolveLinkedRoom } from "./registry.js";
+import { getProjectAgentRoomDir, resolveLinkedRoom } from "./registry.js";
 import { isInsideRoot } from "./permissions.js";
+import { RemoteAgentRoomClient } from "./remote.js";
 import { AgentRoomStore } from "./storage.js";
 export async function setupAgentRoom(projectRoot = process.cwd(), input = {}) {
+    const remote = await RemoteAgentRoomClient.forLinkedProject(projectRoot);
+    if (remote) {
+        const [project, state] = await Promise.all([remote.getCurrentProject(), remote.getState()]);
+        const store = new AgentRoomStore(projectRoot, { roomDir: getProjectAgentRoomDir(projectRoot) });
+        const files = await writeIntegrationFiles(store, project);
+        return {
+            store,
+            project,
+            room: state.room,
+            createdRoom: false,
+            files
+        };
+    }
     const existingRoom = await resolveLinkedRoom(projectRoot);
     const created = existingRoom
         ? await setupLinkedProject(projectRoot, input)

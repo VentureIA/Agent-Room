@@ -17,8 +17,11 @@ export type RoomRecord = {
 export type ProjectRoomLink = {
   roomId: string;
   inviteCode: string;
-  roomDir: string;
+  roomDir?: string;
+  mode?: "local" | "remote";
   relayUrl?: string;
+  projectId?: string;
+  projectToken?: string;
   linkedAt: string;
 };
 
@@ -103,6 +106,7 @@ export async function readProjectLink(projectRoot: string): Promise<ProjectRoomL
 
 export async function writeProjectLink(projectRoot: string, record: RoomRecord): Promise<ProjectRoomLink> {
   const link: ProjectRoomLink = {
+    mode: "local",
     roomId: record.id,
     inviteCode: record.inviteCode,
     roomDir: record.roomDir,
@@ -113,9 +117,34 @@ export async function writeProjectLink(projectRoot: string, record: RoomRecord):
   return link;
 }
 
+export async function writeRemoteProjectLink(
+  projectRoot: string,
+  input: {
+    roomId: string;
+    inviteCode: string;
+    relayUrl: string;
+    projectId: string;
+    projectToken: string;
+  }
+): Promise<ProjectRoomLink> {
+  const link: ProjectRoomLink = {
+    mode: "remote",
+    roomId: input.roomId,
+    inviteCode: input.inviteCode,
+    relayUrl: normalizeRelayUrl(input.relayUrl),
+    projectId: input.projectId,
+    projectToken: input.projectToken,
+    linkedAt: new Date().toISOString()
+  };
+  await writeJson(getProjectLinkPath(projectRoot), link);
+  return link;
+}
+
 export async function resolveLinkedRoom(projectRoot: string, home = getAgentRoomHome()): Promise<RoomRecord | undefined> {
   const link = await readProjectLink(projectRoot);
   if (!link) return undefined;
+  if (link.mode === "remote" || (link.relayUrl && link.projectToken)) return undefined;
+  if (!link.roomDir) return undefined;
   const registered = await findRoomById(link.roomId, home);
   assertInsideHome(link.roomDir, home);
   const fallback: RoomRecord = {
@@ -128,6 +157,13 @@ export async function resolveLinkedRoom(projectRoot: string, home = getAgentRoom
     lastOpenedAt: link.linkedAt
   };
   return registered ?? ((await isValidRoomRecord(fallback, home)) ? fallback : undefined);
+}
+
+function normalizeRelayUrl(relayUrl: string): string {
+  const parsed = new URL(relayUrl);
+  parsed.hash = "";
+  parsed.search = "";
+  return parsed.toString().replace(/\/$/, "");
 }
 
 export async function ensureRoomDirectories(roomDir: string): Promise<void> {

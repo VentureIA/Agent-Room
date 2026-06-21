@@ -6,7 +6,7 @@ export async function processInboxAutonomously(store, options = {}) {
         .slice(0, options.maxQuestions ?? 5);
     const result = { project: currentProject, answered: [], skipped: [] };
     for (const question of questions) {
-        const draft = await draftAnswer(store, question, currentProject, options.maxFiles ?? 30);
+        const draft = await draftAnswerFromEvidence(store, question, currentProject, options.maxFiles ?? 30);
         if (!draft) {
             result.skipped.push({
                 questionId: question.id,
@@ -29,14 +29,14 @@ export async function processInboxAutonomously(store, options = {}) {
     }
     return result;
 }
-async function draftAnswer(store, question, project, maxFiles) {
-    const visibleFiles = await store.listVisibleFiles();
+export async function draftAnswerFromEvidence(reader, question, project, maxFiles) {
+    const visibleFiles = await reader.listVisibleFiles();
     const terms = extractTerms(question);
     const rankedFiles = rankFiles(visibleFiles, terms).slice(0, maxFiles);
     const evidence = [];
     for (const file of rankedFiles) {
         try {
-            const content = await store.readAllowedProjectFile(file);
+            const content = await reader.readAllowedProjectFile(file);
             evidence.push(...extractEvidence(file, content, terms));
         }
         catch {

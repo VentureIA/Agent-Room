@@ -1,0 +1,16 @@
+node_modules
+.git
+.DS_Store
+.env
+.env.*
+.agentroom
+.codex
+.claude
+.agentroom-relay
+coverage
+.turbo
+.vite
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

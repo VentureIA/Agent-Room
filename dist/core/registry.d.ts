@@ -11,8 +11,11 @@ export type RoomRecord = {
 export type ProjectRoomLink = {
     roomId: string;
     inviteCode: string;
-    roomDir: string;
+    roomDir?: string;
+    mode?: "local" | "remote";
     relayUrl?: string;
+    projectId?: string;
+    projectToken?: string;
     linkedAt: string;
 };
 type RegistryFile = {
@@ -30,6 +33,13 @@ export declare function findRoomByInvite(inviteCode: string, home?: string): Pro
 export declare function findRoomById(roomId: string, home?: string): Promise<RoomRecord | undefined>;
 export declare function readProjectLink(projectRoot: string): Promise<ProjectRoomLink | undefined>;
 export declare function writeProjectLink(projectRoot: string, record: RoomRecord): Promise<ProjectRoomLink>;
+export declare function writeRemoteProjectLink(projectRoot: string, input: {
+    roomId: string;
+    inviteCode: string;
+    relayUrl: string;
+    projectId: string;
+    projectToken: string;
+}): Promise<ProjectRoomLink>;
 export declare function resolveLinkedRoom(projectRoot: string, home?: string): Promise<RoomRecord | undefined>;
 export declare function ensureRoomDirectories(roomDir: string): Promise<void>;
 export declare function hasProjectLink(projectRoot: string): Promise<boolean>;
