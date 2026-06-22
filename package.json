@@ -1,6 +1,6 @@
 {
   "name": "agentroom-ai",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Local-first shared understanding layer for AI-coded projects.",
   "type": "module",
   "repository": {
