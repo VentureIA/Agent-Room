@@ -16,6 +16,7 @@ ENV NODE_ENV=production
 ENV PORT=4318
 ENV HOST=0.0.0.0
 ENV AGENTROOM_RELAY_DATA_DIR=/data
+ENV AGENTROOM_RELAY_ALLOW_OPEN_CREATE=true
 
 WORKDIR /app
 COPY --from=build /app/package*.json ./

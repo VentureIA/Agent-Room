@@ -141,7 +141,7 @@ describe("setupAgentRoom", () => {
     const home = path.join(sandbox, "home");
     try {
       await writePackage(project, "init-demo");
-      const { stdout } = await execFileAsync(process.execPath, [tsxCli, cliPath, "init", "--name", "Init Demo"], {
+      const { stdout } = await execFileAsync(process.execPath, [tsxCli, cliPath, "init", "--local", "--name", "Init Demo"], {
         cwd: project,
         env: { ...process.env, AGENTROOM_HOME: home }
       });

@@ -18,6 +18,7 @@ type ParsedJoinInvite = {
     inviteCode: string;
     relayUrl?: string;
 };
+export declare const OFFICIAL_AGENTROOM_RELAY_URL = "https://agent-room.venture-ia.com";
 export declare function resolveDefaultRelayUrl(): string | undefined;
 export declare class RemoteAgentRoomClient {
     readonly projectRoot: string;

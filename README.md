@@ -93,14 +93,14 @@ The command prints a pixel banner, prepares `.agentroom/`, installs MCP for
 Claude Code and Codex, and prints an invite code:
 
 ```text
-Invite code: ar_XXXXXXX
-Projects can join with: npx -y agentroom-ai join ar_XXXXXXX
+Invite code: arr_eyJ...
+Projects can join with: npx -y agentroom-ai join arr_eyJ...
 ```
 
 From the second project:
 
 ```bash
-npx -y agentroom-ai join ar_XXXXXXX --name ProjectB
+npx -y agentroom-ai join arr_eyJ... --name ProjectB
 ```
 
 Restart Claude Code or Codex in both projects, then ask the agent:
@@ -135,6 +135,14 @@ With an explicit project name:
 
 ```bash
 npx -y agentroom-ai init --name Findy
+```
+
+By default, `init` creates an online room on the AgentRoom hosted relay so
+another computer can join with the printed `arr_` invite. For a same-machine
+local room, use:
+
+```bash
+npx -y agentroom-ai init --local
 ```
 
 The generated MCP config uses a portable command:
@@ -172,7 +180,7 @@ npx -y agentroom-ai init
 Join another project to the same room:
 
 ```bash
-npx -y agentroom-ai join ar_XXXXXXX
+npx -y agentroom-ai join arr_eyJ...
 ```
 
 List connected projects:
@@ -235,7 +243,7 @@ In the first project, create the shared room:
 
 ```bash
 cd /path/to/wordpress-project
-npx -y agentroom-ai init claude --name WordPress
+npx -y agentroom-ai init claude --local --name WordPress
 ```
 
 The command prints an invite code like:
@@ -478,11 +486,12 @@ When a hosted room is created from Codex or Claude Code through MCP, the
 joined the room do not store the human dashboard token by default.
 
 A relay URL is the public HTTP(S) address of an AgentRoom hosted relay that both
-computers can reach, for example `https://agentroom.example.com`. Use a local
-room for projects on the same machine. Use an online room for projects on
-different machines. From the agent, call `create_room_local` for a same-machine
-`ar_` invite, or `create_room_online` with `relayUrl` (or with
-`AGENTROOM_RELAY_URL` configured) for a cross-machine `arr_` invite.
+computers can reach. AgentRoom uses the official hosted relay,
+`https://agent-room.venture-ia.com`, by default. Use a local room for projects
+on the same machine. Use an online room for projects on different machines. From
+the agent, call `create_room_local` for a same-machine `ar_` invite, or
+`create_room_online` for a cross-machine `arr_` invite. Pass `relayUrl` only
+when you want a custom/self-hosted relay.
 
 ## Permission Model
 
@@ -586,7 +595,7 @@ Prepare the current project for AgentRoom, create local permissions, and generat
 MCP integration snippets.
 
 ```bash
-agentroom connect
+agentroom connect --local
 ```
 
 Connect the current project to a new local shared room.
@@ -725,8 +734,14 @@ through the MCP tools.
 
 ## Multi-Machine Mode With A Hosted Relay
 
-For two developers on two different computers, run the hosted relay on your own
-server, then expose that relay as the default for AgentRoom commands.
+For two developers on two different computers, the default AgentRoom hosted
+relay is enough:
+
+```bash
+npx -y agentroom-ai init
+```
+
+Run your own relay only when you want a private/self-hosted relay.
 
 Start the relay locally for a quick test:
 
@@ -739,7 +754,7 @@ PORT=4318 \
 npm run serve:relay
 ```
 
-Configure the default relay URL in the developer environment or shell profile:
+Configure a custom relay URL in the developer environment or shell profile:
 
 ```bash
 export AGENTROOM_RELAY_URL=https://agentroom.example.com
@@ -815,6 +830,7 @@ PORT=4318
 HOST=0.0.0.0
 AGENTROOM_RELAY_DATA_DIR=/data
 AGENTROOM_RELAY_ADMIN_TOKEN=<generate-a-long-random-secret>
+AGENTROOM_RELAY_ALLOW_OPEN_CREATE=true
 ```
 
 9. Add your domain in Dokploy, for example:

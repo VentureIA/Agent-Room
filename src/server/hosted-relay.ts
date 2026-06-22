@@ -58,7 +58,7 @@ export async function startHostedRelay(options: HostedRelayOptions = {}): Promis
 
   app.get("/healthz", (_req, res) => res.json({ ok: true, service: "agentroom-relay" }));
   app.get("/install.sh", (_req, res) => {
-    res.type("text/x-shellscript").send(renderInstallScript());
+    res.type("text/x-shellscript").send(renderInstallScript(getRequestOrigin(_req)));
   });
 
   app.get("/dashboard/:inviteCode", async (req, res, next) => {
@@ -602,7 +602,7 @@ function renderDashboardMessage(title: string, message: string): string {
   return `<main style="font-family: sans-serif; max-width: 720px; margin: 64px auto; line-height: 1.5"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></main>`;
 }
 
-function renderInstallScript(): string {
+function renderInstallScript(relayUrl: string): string {
   return `${[
     "#!/bin/sh",
     "set -eu",
@@ -634,9 +634,17 @@ function renderInstallScript(): string {
     "fi",
     "",
     'echo "Installing AgentRoom for $project_name ($client)..."',
-    'npx -y "$package_spec" init "$client" --name "$project_name" --package "$mcp_package_spec"',
+    `AGENTROOM_RELAY_URL="\${AGENTROOM_RELAY_URL:-${relayUrl}}" npx -y "$package_spec" init "$client" --name "$project_name" --package "$mcp_package_spec"`,
     'echo "AgentRoom install complete."'
   ].join("\n")}\n`;
+}
+
+function getRequestOrigin(req: express.Request): string {
+  const protocol = typeof req.headers["x-forwarded-proto"] === "string"
+    ? req.headers["x-forwarded-proto"].split(",")[0]!.trim()
+    : req.protocol;
+  const host = req.get("host") ?? `localhost:${process.env.PORT ?? 4318}`;
+  return `${protocol}://${host}`;
 }
 
 function escapeHtml(value: string): string {

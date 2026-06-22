@@ -28,7 +28,7 @@ describe("CLI connect/join A to Z", () => {
         "utf8"
       );
 
-      const connected = await runCli(projectA, env, "connect", "--name", "WordPress", "--agent", "Claude");
+      const connected = await runCli(projectA, env, "connect", "--local", "--name", "WordPress", "--agent", "Claude");
       const invite = connected.match(/Invite code: (ar_[A-Za-z0-9_-]+)/)?.[1];
       expect(invite).toBeDefined();
 

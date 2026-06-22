@@ -50,7 +50,9 @@ describe("hosted relay", () => {
       const installer = await fetch(`${relay.url}/install.sh`);
       expect(installer.status).toBe(200);
       expect(installer.headers.get("content-type")).toContain("text/x-shellscript");
-      expect(await installer.text()).toContain("agentroom-ai");
+      const installerScript = await installer.text();
+      expect(installerScript).toContain("agentroom-ai");
+      expect(installerScript).toContain(`AGENTROOM_RELAY_URL="\${AGENTROOM_RELAY_URL:-${relay.url}}"`);
 
       const connected = await runCli(
         projectA,

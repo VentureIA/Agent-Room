@@ -1029,7 +1029,7 @@ Use the create_room_local MCP tool${projectName ? ` with name="${projectName}"` 
     },
     async ({ relayUrl, projectName }) => promptText(`Create an online AgentRoom for this project.
 
-Use the create_room_online MCP tool${relayUrl ? ` with relayUrl="${relayUrl}"` : ""}${projectName ? ` and name="${projectName}"` : ""}. If no relay URL is provided and the tool reports that no default relay is configured, ask the human for their relay URL or tell them to set AGENTROOM_RELAY_URL. Return the arr_ invite code, join command, relay URL, and dashboard URL if one is returned.`)
+Use the create_room_online MCP tool${relayUrl ? ` with relayUrl="${relayUrl}"` : ""}${projectName ? ` and name="${projectName}"` : ""}. If no relay URL is provided, use the AgentRoom hosted relay default. Return the arr_ invite code, join command, relay URL, and dashboard URL if one is returned.`)
   );
 
   server.registerPrompt(

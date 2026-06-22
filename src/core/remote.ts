@@ -30,13 +30,15 @@ type ParsedJoinInvite = {
 };
 
 const REMOTE_INVITE_PREFIX = "arr_";
+export const OFFICIAL_AGENTROOM_RELAY_URL = "https://agent-room.venture-ia.com";
 
 export function resolveDefaultRelayUrl(): string | undefined {
   const relayUrl =
     process.env.AGENTROOM_RELAY_URL?.trim() ||
     process.env.AGENTROOM_DEFAULT_RELAY_URL?.trim() ||
     process.env.npm_config_agentroom_relay_url?.trim() ||
-    process.env.npm_config_agentroom_relay?.trim();
+    process.env.npm_config_agentroom_relay?.trim() ||
+    OFFICIAL_AGENTROOM_RELAY_URL;
   return relayUrl ? normalizeRelayUrl(relayUrl) : undefined;
 }
 

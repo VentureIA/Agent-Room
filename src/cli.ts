@@ -204,7 +204,7 @@ program
   .action(async (inviteCode: string | undefined, options) => {
     printPixelBanner("join");
     if (!inviteCode) {
-      throw new Error("Join requires an invite code, for example: agentroom join ar_ABC123");
+      throw new Error("Join requires an invite code, for example: agentroom join arr_eyJ... or agentroom join ar_ABC123.");
     }
     const clients = parseMcpClients(options.client, "join --client");
     const parsedInvite = parseJoinInviteCode(inviteCode);
