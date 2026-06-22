@@ -324,6 +324,8 @@ Use AgentRoom. Coordinate task context automatically before coding, answer incom
 Useful MCP prompts exposed by AgentRoom:
 
 - `agentroom_start_session`
+- `agentroom_create_room_local`
+- `agentroom_create_room_online`
 - `agentroom_resolve_blockers`
 - `agentroom_publish_contract`
 - `agentroom_review_permissions`
@@ -331,6 +333,8 @@ Useful MCP prompts exposed by AgentRoom:
 Useful MCP tools exposed by AgentRoom:
 
 - `setup_project`
+- `create_room_local`
+- `create_room_online`
 - `connect_project`
 - `join_room`
 - `install_client_config`
@@ -472,6 +476,13 @@ When a hosted room is created from Codex or Claude Code through MCP, the
 `connect_project` tool returns `dashboardUrl`, and the creator project's
 `open_dashboard` tool can reopen that hosted dashboard later. Projects that only
 joined the room do not store the human dashboard token by default.
+
+A relay URL is the public HTTP(S) address of an AgentRoom hosted relay that both
+computers can reach, for example `https://agentroom.example.com`. Use a local
+room for projects on the same machine. Use an online room for projects on
+different machines. From the agent, call `create_room_local` for a same-machine
+`ar_` invite, or `create_room_online` with `relayUrl` (or with
+`AGENTROOM_RELAY_URL` configured) for a cross-machine `arr_` invite.
 
 ## Permission Model
 

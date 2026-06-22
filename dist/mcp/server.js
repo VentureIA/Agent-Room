@@ -134,6 +134,51 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
             projectFiles: connected.store.projectAgentRoomDir
         }, null, 2));
     });
+    server.registerTool("create_room_local", {
+        title: "Create Local Room",
+        description: "Create a local AgentRoom on this machine and return an ar_ invite code for projects on the same computer.",
+        inputSchema: {
+            name: z.string().optional(),
+            role: z.string().optional(),
+            agentKind: z.string().default("Codex"),
+            humanOwner: z.string().default("Human owner")
+        }
+    }, async (input) => {
+        const connected = await AgentRoomStore.createSharedRoom(root, input);
+        return text(JSON.stringify({
+            mode: "local",
+            project: connected.project,
+            room: connected.room,
+            inviteCode: connected.room.inviteCode,
+            sharedRoom: connected.record.roomDir,
+            projectFiles: connected.store.projectAgentRoomDir,
+            note: "This ar_ invite works for projects on the same machine. Use create_room_online for another computer."
+        }, null, 2));
+    });
+    server.registerTool("create_room_online", {
+        title: "Create Online Room",
+        description: "Create a hosted AgentRoom through a relay and return an arr_ invite code that can be joined from another computer.",
+        inputSchema: {
+            relayUrl: z.string().url().optional(),
+            relayAdminToken: z.string().optional(),
+            name: z.string().optional(),
+            role: z.string().optional(),
+            agentKind: z.string().default("Codex"),
+            humanOwner: z.string().default("Human owner")
+        }
+    }, async (input) => {
+        const relayUrl = input.relayUrl ?? resolveDefaultRelayUrl();
+        if (!relayUrl) {
+            throw new Error("create_room_online needs a relayUrl or AGENTROOM_RELAY_URL/AGENTROOM_DEFAULT_RELAY_URL in the agent environment.");
+        }
+        const connected = await connectRemoteRoom(root, relayUrl, input.relayAdminToken ?? process.env.AGENTROOM_RELAY_ADMIN_TOKEN, input);
+        return text(JSON.stringify({
+            mode: "online",
+            ...connected,
+            joinCommand: `npx -y agentroom-ai join ${connected.inviteCode}`,
+            note: "Share the arr_ invite code with the other project. Share the dashboardUrl only with trusted humans who can approve room actions."
+        }, null, 2));
+    });
     server.registerTool("join_room", {
         title: "Join Room",
         description: "Join an existing local AgentRoom from an invite code and register the current project.",
@@ -656,6 +701,23 @@ Use read_inbox first. For each open question addressed to this project:
 - If evidence is insufficient, inspect list_visible_files and read_allowed_file.
 - If required evidence is hidden or ask-first, call request_access.
 - Never answer from a guess. Leave the question open when the evidence is not strong enough.`));
+    server.registerPrompt("agentroom_create_room_local", {
+        description: "Create a same-machine AgentRoom and return the local invite code.",
+        argsSchema: {
+            projectName: z.string().optional().describe("Display name for this project")
+        }
+    }, async ({ projectName }) => promptText(`Create a local AgentRoom for this project.
+
+Use the create_room_local MCP tool${projectName ? ` with name="${projectName}"` : ""}. Return the ar_ invite code, shared room path, and explain that this invite only works for projects on the same computer.`));
+    server.registerPrompt("agentroom_create_room_online", {
+        description: "Create a hosted AgentRoom through a relay and return a cross-computer invite code.",
+        argsSchema: {
+            relayUrl: z.string().optional().describe("Hosted AgentRoom relay URL, for example https://agentroom.example.com"),
+            projectName: z.string().optional().describe("Display name for this project")
+        }
+    }, async ({ relayUrl, projectName }) => promptText(`Create an online AgentRoom for this project.
+
+Use the create_room_online MCP tool${relayUrl ? ` with relayUrl="${relayUrl}"` : ""}${projectName ? ` and name="${projectName}"` : ""}. If no relay URL is provided and the tool reports that no default relay is configured, ask the human for their relay URL or tell them to set AGENTROOM_RELAY_URL. Return the arr_ invite code, join command, relay URL, and dashboard URL if one is returned.`));
     server.registerPrompt("agentroom_publish_contract", {
         description: "Prepare a shared integration contract safely.",
         argsSchema: {
