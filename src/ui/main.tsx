@@ -5,7 +5,9 @@ import {
   CircleHelp,
   FileKey2,
   FileWarning,
+  FolderCheck,
   GitBranch,
+  Globe2,
   KeyRound,
   Link2,
   MessageSquarePlus,
@@ -13,6 +15,7 @@ import {
   RefreshCw,
   Save,
   ShieldCheck,
+  ShieldAlert,
   SplitSquareHorizontal,
   Trash2
 } from "lucide-react";
@@ -94,6 +97,7 @@ type DashboardInfo = {
   mode: "local" | "remote";
   roomId?: string;
   inviteCode?: string;
+  currentProjectId?: string;
 };
 
 type PermissionSection = "visible" | "askFirst" | "hidden" | "alwaysRedact";
@@ -284,7 +288,7 @@ function App() {
         </Panel>
 
         <Panel title="Permissions" icon={<ShieldCheck size={18} />}>
-          <PermissionsEditor projects={state.projects} onSaved={refresh} />
+          <PermissionsEditor projects={state.projects} preferredProjectId={dashboardInfo.currentProjectId} onSaved={refresh} />
         </Panel>
       </section>
 
@@ -468,16 +472,28 @@ function RowActions({ status, children }: { status: string; children: React.Reac
   );
 }
 
-function PermissionsEditor({ projects, onSaved }: { projects: Project[]; onSaved: () => Promise<void> }) {
+function PermissionsEditor({
+  projects,
+  preferredProjectId,
+  onSaved
+}: {
+  projects: Project[];
+  preferredProjectId?: string;
+  onSaved: () => Promise<void>;
+}) {
   const [projectId, setProjectId] = useState("");
   const [draft, setDraft] = useState<PermissionDraft>(emptyPermissionDraft);
   const [status, setStatus] = useState("Select a project to review its visibility rules.");
   const [saving, setSaving] = useState(false);
+  const shareEverything = isShareEverythingDraft(draft);
+  const visibleCount = shareEverything ? "All" : String(draft.visible.length);
+  const chosenProject = projects.find((project) => project.id === projectId);
 
   useEffect(() => {
     if (projectId || projects.length === 0) return;
-    setProjectId(projects[0]!.id);
-  }, [projectId, projects]);
+    const preferredProject = projects.find((project) => project.id === preferredProjectId);
+    setProjectId((preferredProject ?? projects[0])!.id);
+  }, [preferredProjectId, projectId, projects]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -499,6 +515,40 @@ function PermissionsEditor({ projects, onSaved }: { projects: Project[]; onSaved
   }, [projectId]);
 
   if (projects.length === 0) return <Empty text="Connect a project before editing permissions." />;
+
+  function chooseEverything() {
+    setDraft(fullAccessDraft());
+    setStatus("Everything selected.");
+  }
+
+  function chooseFolders() {
+    setDraft((current) => {
+      if (!isShareEverythingDraft(current)) return current;
+      return defaultPermissionDraft();
+    });
+    setStatus("Folder selection active.");
+  }
+
+  function toggleVisibleArea(pattern: string) {
+    setDraft((current) => {
+      const base = isShareEverythingDraft(current) ? { ...defaultPermissionDraft(), visible: [] } : current;
+      return {
+        ...base,
+        visible: base.visible.includes(pattern)
+          ? base.visible.filter((item) => item !== pattern)
+          : [...base.visible, pattern]
+      };
+    });
+  }
+
+  function toggleAskFirstArea(pattern: string) {
+    setDraft((current) => ({
+      ...current,
+      askFirst: current.askFirst.includes(pattern)
+        ? current.askFirst.filter((item) => item !== pattern)
+        : [...current.askFirst, pattern]
+    }));
+  }
 
   async function savePermissions() {
     if (!projectId) return;
@@ -532,23 +582,68 @@ function PermissionsEditor({ projects, onSaved }: { projects: Project[]; onSaved
         </select>
       </label>
 
-      <div className="permission-columns">
+      <div className="permission-mode-grid">
+        <button className={`permission-mode ${shareEverything ? "selected" : ""}`} onClick={chooseEverything}>
+          <Globe2 size={22} />
+          <span>
+            <strong>Everything</strong>
+            <small>Protected secrets stay closed</small>
+          </span>
+        </button>
+        <button className={`permission-mode ${!shareEverything ? "selected" : ""}`} onClick={chooseFolders}>
+          <FolderCheck size={22} />
+          <span>
+            <strong>Choose folders</strong>
+            <small>{visibleCount} shared</small>
+          </span>
+        </button>
+      </div>
+
+      {!shareEverything ? (
+        <section className="permission-picker">
+          <div className="permission-section-heading">
+            <strong>Shared</strong>
+            <span>{chosenProject?.name ?? "Project"}</span>
+          </div>
+          <div className="permission-folder-grid">
+            {visibleAreaOptions.map((option) => (
+              <button
+                key={option.pattern}
+                className={`folder-toggle ${draft.visible.includes(option.pattern) ? "active" : ""}`}
+                onClick={() => toggleVisibleArea(option.pattern)}
+              >
+                <FolderCheck size={18} />
+                <span>{option.label}</span>
+                <code>{option.pattern}</code>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="permission-picker compact">
+        <div className="permission-section-heading">
+          <strong>Ask before sharing</strong>
+          <span>{draft.askFirst.length}</span>
+        </div>
+        <div className="permission-folder-grid compact">
+          {askFirstOptions.map((option) => (
+            <button
+              key={option.pattern}
+              className={`folder-toggle warning ${draft.askFirst.includes(option.pattern) ? "active" : ""}`}
+              onClick={() => toggleAskFirstArea(option.pattern)}
+            >
+              <ShieldAlert size={17} />
+              <span>{option.label}</span>
+              <code>{option.pattern}</code>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <div className="permission-safety-grid">
         <PermissionColumn
-          title="Visible"
-          section="visible"
-          items={draft.visible}
-          tone="visible"
-          onChange={setDraft}
-        />
-        <PermissionColumn
-          title="Ask First"
-          section="askFirst"
-          items={draft.askFirst}
-          tone="ask"
-          onChange={setDraft}
-        />
-        <PermissionColumn
-          title="Hidden"
+          title="Protected"
           section="hidden"
           items={draft.hidden}
           tone="hidden"
@@ -567,24 +662,9 @@ function PermissionsEditor({ projects, onSaved }: { projects: Project[]; onSaved
         <button className="small-button" onClick={() => setDraft(defaultPermissionDraft())}>
           Recommended
         </button>
-        <button className="small-button" onClick={() => setDraft(fullAccessDraft())}>
-          Open project
-        </button>
         <button className="small-button ghost" onClick={() => setDraft(lockedDownDraft())}>
           Lock down
         </button>
-      </div>
-
-      <div className="quick-rules">
-        {quickRules.map((rule) => (
-          <button
-            className={`quick-rule ${rule.section}`}
-            key={`${rule.section}-${rule.pattern}`}
-            onClick={() => addPermissionRule(setDraft, rule.section, rule.pattern)}
-          >
-            {rule.label}
-          </button>
-        ))}
       </div>
 
       <div className="permission-footer">
@@ -651,29 +731,34 @@ const emptyPermissionDraft: PermissionDraft = {
   alwaysRedact: []
 };
 
-const quickRules: Array<{ label: string; section: PermissionSection; pattern: string }> = [
-  { label: "Show docs", section: "visible", pattern: "docs/**" },
-  { label: "Show README", section: "visible", pattern: "README.md" },
-  { label: "Show API", section: "visible", pattern: "src/api/**" },
-  { label: "Show types", section: "visible", pattern: "src/types/**" },
-  { label: "Show package", section: "visible", pattern: "package.json" },
-  { label: "Ask auth", section: "askFirst", pattern: "src/auth/**" },
-  { label: "Ask config", section: "askFirst", pattern: "config/**" },
-  { label: "Hide env", section: "hidden", pattern: ".env*" },
-  { label: "Hide build", section: "hidden", pattern: "dist/**" },
-  { label: "Redact tokens", section: "alwaysRedact", pattern: "tokens" },
-  { label: "Redact passwords", section: "alwaysRedact", pattern: "passwords" }
+const visibleAreaOptions: Array<{ label: string; pattern: string }> = [
+  { label: "README", pattern: "README.md" },
+  { label: "Package", pattern: "package.json" },
+  { label: "Docs", pattern: "docs/**" },
+  { label: "API", pattern: "src/api/**" },
+  { label: "Types", pattern: "src/types/**" },
+  { label: "Source", pattern: "src/**" },
+  { label: "App", pattern: "app/**" },
+  { label: "Pages", pattern: "pages/**" },
+  { label: "Components", pattern: "components/**" },
+  { label: "Lib", pattern: "lib/**" },
+  { label: "Tests", pattern: "tests/**" },
+  { label: "Fixtures", pattern: "tests/fixtures/**" },
+  { label: "WordPress ACF", pattern: "wordpress/acf-json/**" },
+  { label: "OpenAPI", pattern: "openapi.yaml" },
+  { label: "GraphQL", pattern: "schema.graphql" },
+  { label: "Composer", pattern: "composer.json" }
 ];
 
-function addPermissionRule(
-  setDraft: React.Dispatch<React.SetStateAction<PermissionDraft>>,
-  section: PermissionSection,
-  pattern: string
-) {
-  setDraft((draft) => ({
-    ...draft,
-    [section]: draft[section].includes(pattern) ? draft[section] : [...draft[section], pattern]
-  }));
+const askFirstOptions: Array<{ label: string; pattern: string }> = [
+  { label: "Auth", pattern: "src/auth/**" },
+  { label: "Config", pattern: "config/**" },
+  { label: "Migrations", pattern: "src/database/migrations/**" },
+  { label: "Billing", pattern: "src/billing/**" }
+];
+
+function isShareEverythingDraft(draft: PermissionDraft): boolean {
+  return draft.visible.includes("**");
 }
 
 function defaultPermissionDraft(): PermissionDraft {
