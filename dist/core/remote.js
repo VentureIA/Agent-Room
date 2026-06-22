@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { Buffer } from "node:buffer";
 import path from "node:path";
 import { draftAnswerFromEvidence } from "./autonomous.js";
 import { detectProject } from "./detect.js";
@@ -6,6 +7,7 @@ import { ensureSafeDirectory, exists, writeTextFile } from "./files.js";
 import { getProjectAgentRoomDir, readProjectLink, writeRemoteProjectLink } from "./registry.js";
 import { classifyPath, parsePermissions, readAllowedFile } from "./permissions.js";
 import { defaultPermissionsMarkdown, renderProjectCard } from "./project-card.js";
+const REMOTE_INVITE_PREFIX = "arr_";
 export class RemoteAgentRoomClient {
     projectRoot;
     link;
@@ -163,37 +165,67 @@ export class RemoteAgentRoomClient {
     }
 }
 export async function connectRemoteRoom(projectRoot, relayUrl, adminToken, input) {
+    const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
     const project = await buildRemoteProjectInput(projectRoot, input);
-    const response = await relayRequest(relayUrl, "/api/rooms", adminToken, {
+    const response = await relayRequest(normalizedRelayUrl, "/api/rooms", adminToken, {
         method: "POST",
         body: JSON.stringify({ project })
     });
+    const remoteInviteCode = createRemoteInviteCode(response.room.inviteCode, normalizedRelayUrl);
     await prepareRemoteProjectFiles(projectRoot, response.project);
     await writeRemoteProjectLink(projectRoot, {
         roomId: response.room.id,
-        inviteCode: response.room.inviteCode,
-        relayUrl,
+        inviteCode: remoteInviteCode,
+        relayUrl: normalizedRelayUrl,
         dashboardUrl: response.dashboardUrl,
         projectId: response.project.id,
         projectToken: response.projectToken
     });
-    return { room: response.room, project: response.project, inviteCode: response.room.inviteCode, relayUrl: normalizeRelayUrl(relayUrl), dashboardUrl: response.dashboardUrl };
+    return { room: response.room, project: response.project, inviteCode: remoteInviteCode, relayUrl: normalizedRelayUrl, dashboardUrl: response.dashboardUrl };
 }
 export async function joinRemoteRoom(projectRoot, relayUrl, inviteCode, input) {
+    const parsedInvite = parseJoinInviteCode(inviteCode);
+    const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
     const project = await buildRemoteProjectInput(projectRoot, input);
-    const response = await relayRequest(relayUrl, "/api/join", undefined, {
+    const response = await relayRequest(normalizedRelayUrl, "/api/join", undefined, {
         method: "POST",
-        body: JSON.stringify({ inviteCode, project })
+        body: JSON.stringify({ inviteCode: parsedInvite.inviteCode, project })
     });
+    const remoteInviteCode = createRemoteInviteCode(response.room.inviteCode, normalizedRelayUrl);
     await prepareRemoteProjectFiles(projectRoot, response.project);
     await writeRemoteProjectLink(projectRoot, {
         roomId: response.room.id,
-        inviteCode: response.room.inviteCode,
-        relayUrl,
+        inviteCode: remoteInviteCode,
+        relayUrl: normalizedRelayUrl,
         projectId: response.project.id,
         projectToken: response.projectToken
     });
-    return { room: response.room, project: response.project, inviteCode: response.room.inviteCode, relayUrl: normalizeRelayUrl(relayUrl) };
+    return { room: response.room, project: response.project, inviteCode: remoteInviteCode, relayUrl: normalizedRelayUrl };
+}
+export function createRemoteInviteCode(inviteCode, relayUrl) {
+    const payload = {
+        v: 1,
+        inviteCode,
+        relayUrl: normalizeRelayUrl(relayUrl)
+    };
+    return `${REMOTE_INVITE_PREFIX}${Buffer.from(JSON.stringify(payload), "utf8").toString("base64url")}`;
+}
+export function parseJoinInviteCode(inviteCode) {
+    if (!inviteCode.startsWith(REMOTE_INVITE_PREFIX))
+        return { inviteCode };
+    try {
+        const payload = JSON.parse(Buffer.from(inviteCode.slice(REMOTE_INVITE_PREFIX.length), "base64url").toString("utf8"));
+        if (payload.v !== 1 || typeof payload.inviteCode !== "string" || typeof payload.relayUrl !== "string") {
+            throw new Error("Invalid payload");
+        }
+        return {
+            inviteCode: payload.inviteCode,
+            relayUrl: normalizeRelayUrl(payload.relayUrl)
+        };
+    }
+    catch {
+        throw new Error("Invalid remote AgentRoom invite token.");
+    }
 }
 export function isRemoteLink(link) {
     return Boolean(link?.relayUrl && link.projectId && link.projectToken && (link.mode === "remote" || !link.roomDir));

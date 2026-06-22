@@ -62,22 +62,25 @@ describe("hosted relay", () => {
         "--agent",
         "Claude"
       );
-      const invite = connected.match(/Invite code: (ar_[A-Za-z0-9_-]+)/)?.[1];
+      const invite = connected.match(/Invite code: (\S+)/)?.[1];
       const dashboardUrl = connected.match(/Dashboard: (http:\/\/[^\s]+)/)?.[1];
       expect(invite).toBeDefined();
+      expect(invite).toMatch(/^arr_/);
       expect(dashboardUrl).toBeDefined();
+      const rawInvite = dashboardUrl!.match(/\/dashboard\/([^?]+)/)?.[1];
+      expect(rawInvite).toMatch(/^ar_/);
       const creatorLink = await readJsonFile<{
         dashboardUrl: string;
+        inviteCode: string;
       }>(path.join(projectA, ".agentroom", "room-link.json"));
       expect(creatorLink.dashboardUrl).toBe(dashboardUrl);
+      expect(creatorLink.inviteCode).toBe(invite);
 
       const joined = await runCli(
         projectB,
         { ...process.env, AGENTROOM_HOME: homeB },
         "join",
         invite!,
-        "--relay",
-        relay.url,
         "--name",
         "SaaS",
         "--agent",
@@ -106,7 +109,7 @@ describe("hosted relay", () => {
       const dashboardState = await fetch(`${relay.url}/api/state`, { headers: { cookie: dashboardCookie! } });
       expect(dashboardState.status).toBe(200);
       const dashboardRoom = await dashboardState.json() as RoomState;
-      expect(dashboardRoom.room.inviteCode).toBe(invite);
+      expect(dashboardRoom.room.inviteCode).toBe(rawInvite);
       expect(dashboardRoom.projects.map((project) => project.name)).toEqual(expect.arrayContaining(["WordPress", "SaaS"]));
 
       const saasLink = await readJsonFile<{
@@ -187,7 +190,7 @@ describe("hosted relay", () => {
       });
 
       const wsState = await readDashboardWebSocketState(relay.url, dashboardCookie!);
-      expect(wsState.room.inviteCode).toBe(invite);
+      expect(wsState.room.inviteCode).toBe(rawInvite);
       expect(wsState.decisions).toEqual(expect.arrayContaining([expect.objectContaining({ id: decision.id, status: "approved" })]));
 
       const asked = await runCli(

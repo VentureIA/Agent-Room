@@ -11,7 +11,7 @@ import { startRelay } from "./server/relay.js";
 import { startHostedRelay } from "./server/hosted-relay.js";
 import { runMcpServer } from "./mcp/server.js";
 import { findRoomByInvite, getAgentRoomHome, readProjectLink } from "./core/registry.js";
-import { connectRemoteRoom, joinRemoteRoom, RemoteAgentRoomClient } from "./core/remote.js";
+import { connectRemoteRoom, joinRemoteRoom, parseJoinInviteCode, RemoteAgentRoomClient } from "./core/remote.js";
 import { answerSchema, questionSchema } from "./core/types.js";
 const program = new Command();
 program
@@ -185,20 +185,22 @@ program
         throw new Error("Join requires an invite code, for example: agentroom join ar_ABC123");
     }
     const clients = parseMcpClients(options.client, "join --client");
-    if (options.relay) {
-        const joined = await joinRemoteRoom(process.cwd(), options.relay, inviteCode, {
+    const parsedInvite = parseJoinInviteCode(inviteCode);
+    const relayUrl = options.relay ?? parsedInvite.relayUrl;
+    if (relayUrl) {
+        const joined = await joinRemoteRoom(process.cwd(), relayUrl, inviteCode, {
             name: options.name,
             role: options.role,
             agentKind: options.agent,
             humanOwner: options.owner
         });
-        console.log(`Joined remote AgentRoom via ${inviteCode} as ${joined.project.name}.`);
+        console.log(`Joined remote AgentRoom via ${joined.inviteCode} as ${joined.project.name}.`);
         console.log(`Relay: ${joined.relayUrl}`);
         const results = await installClients(clients, options);
         printReady("AgentRoom ready", results);
         return;
     }
-    const record = await findRoomByInvite(inviteCode);
+    const record = await findRoomByInvite(parsedInvite.inviteCode);
     if (!record) {
         throw new Error(`No local AgentRoom invite found for ${inviteCode}. Run connect in the first project, then join from the second project on the same machine.`);
     }

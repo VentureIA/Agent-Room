@@ -7,7 +7,7 @@ import { z } from "zod";
 import { processInboxAutonomously, resolveQuestionForLocalProject } from "../core/autonomous.js";
 import { installMcpConfig } from "../core/install.js";
 import { findRoomByInvite, readProjectLink } from "../core/registry.js";
-import { connectRemoteRoom, joinRemoteRoom, RemoteAgentRoomClient } from "../core/remote.js";
+import { connectRemoteRoom, joinRemoteRoom, parseJoinInviteCode, RemoteAgentRoomClient } from "../core/remote.js";
 import { setupAgentRoom } from "../core/setup.js";
 import { AgentRoomStore } from "../core/storage.js";
 import { startRelay } from "../server/relay.js";
@@ -145,11 +145,13 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
             relayUrl: z.string().url().optional()
         }
     }, async (input) => {
-        if (input.relayUrl) {
-            const joined = await joinRemoteRoom(root, input.relayUrl, input.inviteCode, input);
+        const parsedInvite = parseJoinInviteCode(input.inviteCode);
+        const relayUrl = input.relayUrl ?? parsedInvite.relayUrl;
+        if (relayUrl) {
+            const joined = await joinRemoteRoom(root, relayUrl, input.inviteCode, input);
             return text(JSON.stringify(joined, null, 2));
         }
-        const record = await findRoomByInvite(input.inviteCode);
+        const record = await findRoomByInvite(parsedInvite.inviteCode);
         if (!record)
             throw new Error(`No local AgentRoom invite found for ${input.inviteCode}.`);
         const joined = await AgentRoomStore.joinSharedRoom(root, record, input);

@@ -14,6 +14,10 @@ export type RemoteConnectResult = {
     relayUrl: string;
     dashboardUrl?: string;
 };
+type ParsedJoinInvite = {
+    inviteCode: string;
+    relayUrl?: string;
+};
 export declare class RemoteAgentRoomClient {
     readonly projectRoot: string;
     readonly link: ProjectRoomLink;
@@ -66,8 +70,11 @@ export declare class RemoteAgentRoomClient {
 }
 export declare function connectRemoteRoom(projectRoot: string, relayUrl: string, adminToken: string | undefined, input: RemoteProjectInput): Promise<RemoteConnectResult>;
 export declare function joinRemoteRoom(projectRoot: string, relayUrl: string, inviteCode: string, input: RemoteProjectInput): Promise<RemoteConnectResult>;
+export declare function createRemoteInviteCode(inviteCode: string, relayUrl: string): string;
+export declare function parseJoinInviteCode(inviteCode: string): ParsedJoinInvite;
 export declare function isRemoteLink(link: ProjectRoomLink | undefined): link is ProjectRoomLink & {
     relayUrl: string;
     projectId: string;
     projectToken: string;
 };
+export {};
