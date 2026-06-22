@@ -759,6 +759,35 @@ export class AgentRoomStore {
     return permissionsPath;
   }
 
+  async readPermissionsMarkdownForProject(projectId: string): Promise<string> {
+    const project = this.getProjectById(projectId);
+    const stored = this.openDb()
+      .prepare("select markdown from project_permissions where project_id = ? limit 1")
+      .get(projectId) as StoredRow | undefined;
+    if (stored) return String(stored.markdown);
+    if (project.path.startsWith("remote://")) return defaultPermissionsMarkdown();
+    const permissionsPath = path.join(getProjectAgentRoomDir(project.path), "permissions.md");
+    if (!(await exists(permissionsPath))) await this.ensureDefaultPermissions(project.path);
+    return fs.readFile(permissionsPath, "utf8");
+  }
+
+  async writePermissionsMarkdownForProject(projectId: string, markdown: string): Promise<string> {
+    const project = this.getProjectById(projectId);
+    this.openDb()
+      .prepare(
+        `insert into project_permissions (project_id, markdown, updated_at)
+         values (?, ?, ?)
+         on conflict(project_id) do update set
+          markdown = excluded.markdown,
+          updated_at = excluded.updated_at`
+      )
+      .run(projectId, markdown, nowIso());
+    if (project.path.startsWith("remote://")) return `remote://${projectId}/permissions.md`;
+    const permissionsPath = path.join(getProjectAgentRoomDir(project.path), "permissions.md");
+    await writeTextFile(permissionsPath, markdown);
+    return permissionsPath;
+  }
+
   close(): void {
     this.db?.close();
     this.db = undefined;
@@ -867,6 +896,11 @@ export class AgentRoomStore {
       create table if not exists project_snapshots (
         project_id text primary key,
         files_json text not null,
+        updated_at text not null
+      );
+      create table if not exists project_permissions (
+        project_id text primary key,
+        markdown text not null,
         updated_at text not null
       );
       create table if not exists decisions (
@@ -996,6 +1030,12 @@ export class AgentRoomStore {
   private assertProjectExists(projectId: string): void {
     const row = this.openDb().prepare("select id from projects where id = ? limit 1").get(projectId) as StoredRow | undefined;
     if (!row) throw new Error(`Project does not exist in this AgentRoom: ${projectId}`);
+  }
+
+  private getProjectById(projectId: string): Project {
+    const row = this.openDb().prepare("select * from projects where id = ? limit 1").get(projectId) as StoredRow | undefined;
+    if (!row) throw new Error(`Project does not exist in this AgentRoom: ${projectId}`);
+    return mapProject(row);
   }
 
   private async createFileAlert(input: {

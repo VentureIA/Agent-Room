@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import { z } from "zod";
 import { AgentRoomStore } from "../core/storage.js";
 import { updateRoomRelayUrl, writeProjectLink } from "../core/registry.js";
-import { answerSchema, connectProjectSchema, contractSchema, decisionSchema, fileActivitySchema, fileAlertConfirmationSchema, fileEditCheckSchema, questionSchema } from "../core/types.js";
+import { answerSchema, connectProjectSchema, contractSchema, decisionSchema, fileActivitySchema, fileAlertConfirmationSchema, fileEditCheckSchema, projectPermissionsSchema, questionSchema } from "../core/types.js";
 const relayConnectProjectSchema = connectProjectSchema.omit({ path: true });
 export async function startRelay(options = {}) {
     const port = options.port ?? 4317;
@@ -35,6 +35,19 @@ export async function startRelay(options = {}) {
     app.get("/api/state", async (_req, res, next) => {
         try {
             res.json(await store.getState());
+        }
+        catch (error) {
+            next(error);
+        }
+    });
+    app.get("/api/dashboard-info", async (_req, res, next) => {
+        try {
+            const state = await store.getState();
+            res.json({
+                mode: "local",
+                roomId: state.room.id,
+                inviteCode: state.room.inviteCode
+            });
         }
         catch (error) {
             next(error);
@@ -179,6 +192,32 @@ export async function startRelay(options = {}) {
     app.get("/api/files", async (_req, res, next) => {
         try {
             res.json({ files: await store.listVisibleFiles() });
+        }
+        catch (error) {
+            next(error);
+        }
+    });
+    app.get("/api/projects/:projectId/permissions", async (req, res, next) => {
+        try {
+            res.json({
+                projectId: String(req.params.projectId ?? ""),
+                markdown: await store.readPermissionsMarkdownForProject(String(req.params.projectId ?? ""))
+            });
+        }
+        catch (error) {
+            next(error);
+        }
+    });
+    app.put("/api/projects/:projectId/permissions", async (req, res, next) => {
+        try {
+            const input = projectPermissionsSchema.parse(req.body);
+            const permissionsPath = await store.writePermissionsMarkdownForProject(String(req.params.projectId ?? ""), input.markdown);
+            await broadcastState(store, wss);
+            res.json({
+                projectId: String(req.params.projectId ?? ""),
+                permissionsPath,
+                markdown: input.markdown
+            });
         }
         catch (error) {
             next(error);

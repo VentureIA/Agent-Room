@@ -38,6 +38,9 @@ export const projectSnapshotSchema = z.object({
         content: z.string()
     })).default([])
 });
+export const projectPermissionsSchema = z.object({
+    markdown: z.string().min(1).max(100_000)
+});
 export const decisionSchema = z.object({
     title: z.string().min(1),
     reason: z.string().min(1),

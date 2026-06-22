@@ -117,9 +117,19 @@ export class RemoteAgentRoomClient {
     return this.request<ProjectSnapshot>(`/api/rooms/${this.link.roomId}/project-snapshot`, {
       method: "POST",
       body: JSON.stringify({
-        files: await buildProjectSnapshotFiles(this.projectRoot, currentProject)
+        files: await buildProjectSnapshotFiles(this.projectRoot, currentProject, await this.readPermissionsMarkdown())
       })
     });
+  }
+
+  async publishPermissionsMarkdown(markdown: string): Promise<{ projectId: string; permissionsPath: string; markdown: string }> {
+    return this.request<{ projectId: string; permissionsPath: string; markdown: string }>(
+      `/api/rooms/${this.link.roomId}/projects/${this.link.projectId}/permissions`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ markdown })
+      }
+    );
   }
 
   async answerQuestionForProject(
@@ -251,7 +261,12 @@ export class RemoteAgentRoomClient {
   }
 
   async readPermissionsMarkdown(): Promise<string> {
-    return fs.readFile(path.join(getProjectAgentRoomDir(this.projectRoot), "permissions.md"), "utf8");
+    try {
+      const response = await this.request<{ markdown: string }>(`/api/rooms/${this.link.roomId}/projects/${this.link.projectId}/permissions`);
+      return response.markdown;
+    } catch {
+      return readLocalPermissionsMarkdown(this.projectRoot);
+    }
   }
 
   private async request<T>(endpoint: string, init: RequestInit = {}): Promise<T> {
@@ -293,7 +308,9 @@ export async function connectRemoteRoom(
     projectId: response.project.id,
     projectToken: response.projectToken
   });
-  await new RemoteAgentRoomClient(projectRoot, link).publishProjectSnapshot();
+  const client = new RemoteAgentRoomClient(projectRoot, link);
+  await client.publishPermissionsMarkdown(await readLocalPermissionsMarkdown(projectRoot));
+  await client.publishProjectSnapshot();
   return { room: response.room, project: response.project, inviteCode: remoteInviteCode, relayUrl: normalizedRelayUrl, dashboardUrl: response.dashboardUrl };
 }
 
@@ -319,7 +336,9 @@ export async function joinRemoteRoom(
     projectId: response.project.id,
     projectToken: response.projectToken
   });
-  await new RemoteAgentRoomClient(projectRoot, link).publishProjectSnapshot();
+  const client = new RemoteAgentRoomClient(projectRoot, link);
+  await client.publishPermissionsMarkdown(await readLocalPermissionsMarkdown(projectRoot));
+  await client.publishProjectSnapshot();
   return { room: response.room, project: response.project, inviteCode: remoteInviteCode, relayUrl: normalizedRelayUrl };
 }
 
@@ -382,8 +401,8 @@ async function prepareRemoteProjectFiles(projectRoot: string, project: Project):
   await writeTextFile(path.join(agentRoomDir, "project-card.md"), renderProjectCard(project));
 }
 
-async function buildProjectSnapshotFiles(projectRoot: string, project: Project): Promise<ProjectSnapshotFile[]> {
-  const policy = parsePermissions(await fs.readFile(path.join(getProjectAgentRoomDir(projectRoot), "permissions.md"), "utf8"));
+async function buildProjectSnapshotFiles(projectRoot: string, project: Project, permissionsMarkdown: string): Promise<ProjectSnapshotFile[]> {
+  const policy = parsePermissions(permissionsMarkdown);
   const visibleFiles = (await listProjectFiles(projectRoot))
     .filter((file) => classifyPath(file, policy) === "visible")
     .slice(0, MAX_SNAPSHOT_FILES);
@@ -408,6 +427,10 @@ async function buildProjectSnapshotFiles(projectRoot: string, project: Project):
   }
 
   return files;
+}
+
+async function readLocalPermissionsMarkdown(projectRoot: string): Promise<string> {
+  return fs.readFile(path.join(getProjectAgentRoomDir(projectRoot), "permissions.md"), "utf8");
 }
 
 async function relayRequest<T>(relayUrl: string, endpoint: string, token: string | undefined, init: RequestInit): Promise<T> {

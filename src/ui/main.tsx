@@ -11,8 +11,10 @@ import {
   MessageSquarePlus,
   ShieldQuestion,
   RefreshCw,
+  Save,
   ShieldCheck,
-  SplitSquareHorizontal
+  SplitSquareHorizontal,
+  Trash2
 } from "lucide-react";
 import "./styles.css";
 
@@ -93,6 +95,10 @@ type DashboardInfo = {
   roomId?: string;
   inviteCode?: string;
 };
+
+type PermissionSection = "visible" | "askFirst" | "hidden" | "alwaysRedact";
+
+type PermissionDraft = Record<PermissionSection, string[]>;
 
 const emptyState: RoomState = {
   room: { id: "", name: "AgentRoom", inviteCode: "" },
@@ -278,7 +284,7 @@ function App() {
         </Panel>
 
         <Panel title="Permissions" icon={<ShieldCheck size={18} />}>
-          <PermissionRows />
+          <PermissionsEditor projects={state.projects} onSaved={refresh} />
         </Panel>
       </section>
 
@@ -462,27 +468,288 @@ function RowActions({ status, children }: { status: string; children: React.Reac
   );
 }
 
-function PermissionRows() {
-  const rows = [
-    ["Visible", "Documentation, API schemas, fixtures, public types"],
-    ["Ask First", "Auth, migrations, config"],
-    ["Hidden", "Secrets, billing, private folders, dependency folders"],
-    ["Redacted", "Keys, tokens, passwords, private keys, customer data"]
-  ];
+function PermissionsEditor({ projects, onSaved }: { projects: Project[]; onSaved: () => Promise<void> }) {
+  const [projectId, setProjectId] = useState("");
+  const [draft, setDraft] = useState<PermissionDraft>(emptyPermissionDraft);
+  const [status, setStatus] = useState("Select a project to review its visibility rules.");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (projectId || projects.length === 0) return;
+    setProjectId(projects[0]!.id);
+  }, [projectId, projects]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    setStatus("Loading permissions...");
+    fetchJson<{ markdown: string }>(`/api/projects/${projectId}/permissions`)
+      .then((payload) => {
+        if (cancelled) return;
+        setDraft(parsePermissionsMarkdown(payload.markdown));
+        setStatus("Permissions loaded.");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setStatus(error instanceof Error ? error.message : "Unable to load permissions.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  if (projects.length === 0) return <Empty text="Connect a project before editing permissions." />;
+
+  async function savePermissions() {
+    if (!projectId) return;
+    setSaving(true);
+    setStatus("Saving permissions...");
+    try {
+      await fetchJson(`/api/projects/${projectId}/permissions`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markdown: renderPermissionsMarkdown(draft) })
+      });
+      setStatus("Permissions saved.");
+      await onSaved();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to save permissions.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <div className="permission-list">
-      {rows.map(([label, text]) => (
-        <div key={label}>
-          <strong>{label}</strong>
-          <span>{text}</span>
-        </div>
-      ))}
+    <div className="permissions-editor">
+      <label className="field-label">
+        Project
+        <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="permission-columns">
+        <PermissionColumn
+          title="Visible"
+          section="visible"
+          items={draft.visible}
+          tone="visible"
+          onChange={setDraft}
+        />
+        <PermissionColumn
+          title="Ask First"
+          section="askFirst"
+          items={draft.askFirst}
+          tone="ask"
+          onChange={setDraft}
+        />
+        <PermissionColumn
+          title="Hidden"
+          section="hidden"
+          items={draft.hidden}
+          tone="hidden"
+          onChange={setDraft}
+        />
+        <PermissionColumn
+          title="Redacted"
+          section="alwaysRedact"
+          items={draft.alwaysRedact}
+          tone="redact"
+          onChange={setDraft}
+        />
+      </div>
+
+      <div className="permission-quickbar">
+        <button className="small-button" onClick={() => setDraft(defaultPermissionDraft())}>
+          Recommended
+        </button>
+        <button className="small-button" onClick={() => setDraft(fullAccessDraft())}>
+          Open project
+        </button>
+        <button className="small-button ghost" onClick={() => setDraft(lockedDownDraft())}>
+          Lock down
+        </button>
+      </div>
+
+      <div className="quick-rules">
+        {quickRules.map((rule) => (
+          <button
+            className={`quick-rule ${rule.section}`}
+            key={`${rule.section}-${rule.pattern}`}
+            onClick={() => addPermissionRule(setDraft, rule.section, rule.pattern)}
+          >
+            {rule.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="permission-footer">
+        <span>{status}</span>
+        <button onClick={savePermissions} disabled={saving}>
+          <Save size={16} /> Save
+        </button>
+      </div>
     </div>
+  );
+}
+
+function PermissionColumn({
+  title,
+  section,
+  items,
+  tone,
+  onChange
+}: {
+  title: string;
+  section: PermissionSection;
+  items: string[];
+  tone: string;
+  onChange: React.Dispatch<React.SetStateAction<PermissionDraft>>;
+}) {
+  function removeItem(index: number) {
+    onChange((draft) => ({
+      ...draft,
+      [section]: draft[section].filter((_, itemIndex) => itemIndex !== index)
+    }));
+  }
+
+  return (
+    <section className={`permission-column ${tone}`}>
+      <div className="permission-column-title">
+        <strong>{title}</strong>
+      </div>
+      <div className="permission-chips">
+        {items.length === 0 ? (
+          <span className="empty-chip">None</span>
+        ) : (
+          items.map((item, index) => (
+            <span className="permission-chip" key={`${section}-${item}-${index}`}>
+              {item}
+              <button className="mini-icon-button ghost" onClick={() => removeItem(index)} aria-label={`Remove ${item}`} title={`Remove ${item}`}>
+                <Trash2 size={15} />
+              </button>
+            </span>
+          ))
+        )}
+      </div>
+    </section>
   );
 }
 
 function Empty({ text }: { text: string }) {
   return <p className="empty">{text}</p>;
+}
+
+const emptyPermissionDraft: PermissionDraft = {
+  visible: [],
+  askFirst: [],
+  hidden: [],
+  alwaysRedact: []
+};
+
+const quickRules: Array<{ label: string; section: PermissionSection; pattern: string }> = [
+  { label: "Show docs", section: "visible", pattern: "docs/**" },
+  { label: "Show README", section: "visible", pattern: "README.md" },
+  { label: "Show API", section: "visible", pattern: "src/api/**" },
+  { label: "Show types", section: "visible", pattern: "src/types/**" },
+  { label: "Show package", section: "visible", pattern: "package.json" },
+  { label: "Ask auth", section: "askFirst", pattern: "src/auth/**" },
+  { label: "Ask config", section: "askFirst", pattern: "config/**" },
+  { label: "Hide env", section: "hidden", pattern: ".env*" },
+  { label: "Hide build", section: "hidden", pattern: "dist/**" },
+  { label: "Redact tokens", section: "alwaysRedact", pattern: "tokens" },
+  { label: "Redact passwords", section: "alwaysRedact", pattern: "passwords" }
+];
+
+function addPermissionRule(
+  setDraft: React.Dispatch<React.SetStateAction<PermissionDraft>>,
+  section: PermissionSection,
+  pattern: string
+) {
+  setDraft((draft) => ({
+    ...draft,
+    [section]: draft[section].includes(pattern) ? draft[section] : [...draft[section], pattern]
+  }));
+}
+
+function defaultPermissionDraft(): PermissionDraft {
+  return {
+    visible: [
+      "README.md",
+      "docs/**",
+      "src/api/**",
+      "src/types/**",
+      "tests/fixtures/**",
+      "wordpress/acf-json/**",
+      "package.json",
+      "composer.json",
+      "schema.graphql",
+      "openapi.yaml"
+    ],
+    askFirst: ["src/auth/**", "src/database/migrations/**", "config/**"],
+    hidden: [".env*", "secrets/**", "private/**", "src/billing/**", ".git/**", "node_modules/**", "vendor/**", "dist/**", "build/**"],
+    alwaysRedact: ["API keys", "tokens", "passwords", "private keys", "customer data"]
+  };
+}
+
+function fullAccessDraft(): PermissionDraft {
+  return {
+    visible: ["**"],
+    askFirst: [],
+    hidden: [".env*", "secrets/**", "private/**", ".git/**", "node_modules/**", "vendor/**"],
+    alwaysRedact: ["API keys", "tokens", "passwords", "private keys", "customer data"]
+  };
+}
+
+function lockedDownDraft(): PermissionDraft {
+  return {
+    visible: ["README.md", "package.json"],
+    askFirst: [],
+    hidden: [".env*", "secrets/**", "private/**", ".git/**", "node_modules/**", "vendor/**", "dist/**", "build/**", "src/**"],
+    alwaysRedact: ["API keys", "tokens", "passwords", "private keys", "customer data"]
+  };
+}
+
+const permissionHeadings: Record<string, PermissionSection> = {
+  visible: "visible",
+  "ask first": "askFirst",
+  hidden: "hidden",
+  "always redact": "alwaysRedact"
+};
+
+function parsePermissionsMarkdown(markdown: string): PermissionDraft {
+  const draft: PermissionDraft = { visible: [], askFirst: [], hidden: [], alwaysRedact: [] };
+  let active: PermissionSection | undefined;
+  for (const line of markdown.split(/\r?\n/)) {
+    const heading = line.match(/^##\s+(.+)$/);
+    if (heading) {
+      active = permissionHeadings[heading[1]?.trim().toLowerCase() ?? ""];
+      continue;
+    }
+    const item = line.match(/^-\s+(.+)$/);
+    if (item && active) draft[active].push(item[1]!.trim());
+  }
+  return draft;
+}
+
+function renderPermissionsMarkdown(draft: PermissionDraft): string {
+  return [
+    "# agentroom.permissions.md",
+    "",
+    ...renderPermissionSection("Visible", draft.visible),
+    ...renderPermissionSection("Ask First", draft.askFirst),
+    ...renderPermissionSection("Hidden", draft.hidden),
+    ...renderPermissionSection("Always Redact", draft.alwaysRedact)
+  ].join("\n");
+}
+
+function renderPermissionSection(title: string, items: string[]): string[] {
+  const cleanItems = items.map((item) => item.trim()).filter(Boolean);
+  return [`## ${title}`, ...cleanItems.map((item) => `- ${item}`), ""];
 }
 
 async function fetchJson<T = unknown>(url: string, init?: RequestInit): Promise<T> {

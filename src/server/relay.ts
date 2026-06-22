@@ -17,6 +17,7 @@ import {
   fileActivitySchema,
   fileAlertConfirmationSchema,
   fileEditCheckSchema,
+  projectPermissionsSchema,
   questionSchema
 } from "../core/types.js";
 
@@ -53,6 +54,19 @@ export async function startRelay(options: RelayOptions = {}): Promise<{ url: str
   app.get("/api/state", async (_req, res, next) => {
     try {
       res.json(await store.getState());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/dashboard-info", async (_req, res, next) => {
+    try {
+      const state = await store.getState();
+      res.json({
+        mode: "local",
+        roomId: state.room.id,
+        inviteCode: state.room.inviteCode
+      });
     } catch (error) {
       next(error);
     }
@@ -197,6 +211,32 @@ export async function startRelay(options: RelayOptions = {}): Promise<{ url: str
   app.get("/api/files", async (_req, res, next) => {
     try {
       res.json({ files: await store.listVisibleFiles() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/projects/:projectId/permissions", async (req, res, next) => {
+    try {
+      res.json({
+        projectId: String(req.params.projectId ?? ""),
+        markdown: await store.readPermissionsMarkdownForProject(String(req.params.projectId ?? ""))
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/projects/:projectId/permissions", async (req, res, next) => {
+    try {
+      const input = projectPermissionsSchema.parse(req.body);
+      const permissionsPath = await store.writePermissionsMarkdownForProject(String(req.params.projectId ?? ""), input.markdown);
+      await broadcastState(store, wss);
+      res.json({
+        projectId: String(req.params.projectId ?? ""),
+        permissionsPath,
+        markdown: input.markdown
+      });
     } catch (error) {
       next(error);
     }

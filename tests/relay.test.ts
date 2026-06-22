@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { WebSocket } from "ws";
@@ -25,8 +25,18 @@ describe("startRelay", () => {
 
       const stateResponse = await fetch(`${baseUrl}/api/state`, { headers: { cookie: cookie ?? "" } });
       expect(stateResponse.status).toBe(200);
+      const state = await stateResponse.json() as { projects: Array<{ id: string }> };
       const missingApiResponse = await fetch(`${baseUrl}/api/missing`, { headers: { cookie: cookie ?? "" } });
       expect(missingApiResponse.status).toBe(404);
+
+      const permissionMarkdown = "# agentroom.permissions.md\n\n## Visible\n- **\n\n## Ask First\n\n## Hidden\n- .env*\n\n## Always Redact\n- tokens\n";
+      const permissionsResponse = await fetch(`${baseUrl}/api/projects/${state.projects[0]!.id}/permissions`, {
+        method: "PUT",
+        headers: { cookie: cookie ?? "", "Content-Type": "application/json" },
+        body: JSON.stringify({ markdown: permissionMarkdown })
+      });
+      expect(permissionsResponse.status).toBe(200);
+      await expect(readFile(path.join(root, ".agentroom", "permissions.md"), "utf8")).resolves.toBe(permissionMarkdown);
 
       const link = await readProjectLink(root);
       expect(link?.relayUrl).toBe(`${baseUrl}/`);

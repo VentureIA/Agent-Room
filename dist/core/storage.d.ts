@@ -115,6 +115,8 @@ export declare class AgentRoomStore {
     readAllowedProjectFile(relativePath: string): Promise<string>;
     readPermissionsMarkdown(): Promise<string>;
     writePermissionsMarkdown(markdown: string): Promise<string>;
+    readPermissionsMarkdownForProject(projectId: string): Promise<string>;
+    writePermissionsMarkdownForProject(projectId: string, markdown: string): Promise<string>;
     close(): void;
     private openDb;
     private ensureDefaultPermissions;
@@ -127,5 +129,6 @@ export declare class AgentRoomStore {
     private writeRoomManifest;
     private writeDecisionsMarkdown;
     private assertProjectExists;
+    private getProjectById;
     private createFileAlert;
 }

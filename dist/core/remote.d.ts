@@ -37,6 +37,11 @@ export declare class RemoteAgentRoomClient {
         urgency: "low" | "normal" | "blocking";
     }): Promise<Question>;
     publishProjectSnapshot(): Promise<ProjectSnapshot>;
+    publishPermissionsMarkdown(markdown: string): Promise<{
+        projectId: string;
+        permissionsPath: string;
+        markdown: string;
+    }>;
     answerQuestionForProject(_projectId: string, input: {
         questionId: string;
         answer: string;

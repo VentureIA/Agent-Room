@@ -17,6 +17,7 @@ import {
   fileActivitySchema,
   fileAlertConfirmationSchema,
   fileEditCheckSchema,
+  projectPermissionsSchema,
   projectSnapshotSchema,
   type ProjectSnapshot,
   type ProjectSnapshotFile,
@@ -196,6 +197,40 @@ export async function startHostedRelay(options: HostedRelayOptions = {}): Promis
     }
   });
 
+  app.get("/api/rooms/:roomId/projects/:projectId/permissions", requireProject(dataDir), async (req, res, next) => {
+    try {
+      const context = requestProjectContext(req);
+      const projectId = String(req.params.projectId ?? "");
+      if (projectId !== context.project.id) {
+        res.status(403).json({ error: "Project tokens can only read their own AgentRoom permissions." });
+        return;
+      }
+      res.json({
+        projectId,
+        markdown: await context.store.readPermissionsMarkdownForProject(projectId)
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/rooms/:roomId/projects/:projectId/permissions", requireProject(dataDir), async (req, res, next) => {
+    try {
+      const context = requestProjectContext(req);
+      const projectId = String(req.params.projectId ?? "");
+      if (projectId !== context.project.id) {
+        res.status(403).json({ error: "Project tokens can only update their own AgentRoom permissions." });
+        return;
+      }
+      const input = projectPermissionsSchema.parse(req.body);
+      const permissionsPath = await context.store.writePermissionsMarkdownForProject(projectId, input.markdown);
+      await broadcastRoomState(context.store, wss);
+      res.json({ projectId, permissionsPath, markdown: input.markdown });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post("/api/rooms/:roomId/answers", requireProject(dataDir), async (req, res, next) => {
     try {
       const context = requestProjectContext(req);
@@ -323,6 +358,32 @@ export async function startHostedRelay(options: HostedRelayOptions = {}): Promis
   app.get("/api/state", requireDashboard(dataDir, dashboardSessions), async (req, res, next) => {
     try {
       res.json(await requestContext(req).store.getState());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/projects/:projectId/permissions", requireDashboard(dataDir, dashboardSessions), async (req, res, next) => {
+    try {
+      const context = requestContext(req);
+      const projectId = String(req.params.projectId ?? "");
+      res.json({
+        projectId,
+        markdown: await context.store.readPermissionsMarkdownForProject(projectId)
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/projects/:projectId/permissions", requireDashboard(dataDir, dashboardSessions), async (req, res, next) => {
+    try {
+      const context = requestContext(req);
+      const projectId = String(req.params.projectId ?? "");
+      const input = projectPermissionsSchema.parse(req.body);
+      const permissionsPath = await context.store.writePermissionsMarkdownForProject(projectId, input.markdown);
+      await broadcastRoomState(context.store, wss);
+      res.json({ projectId, permissionsPath, markdown: input.markdown });
     } catch (error) {
       next(error);
     }

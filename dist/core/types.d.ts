@@ -193,6 +193,9 @@ export declare const projectSnapshotSchema: z.ZodObject<{
         content: z.ZodString;
     }, z.core.$strip>>>;
 }, z.core.$strip>;
+export declare const projectPermissionsSchema: z.ZodObject<{
+    markdown: z.ZodString;
+}, z.core.$strip>;
 export declare const decisionSchema: z.ZodObject<{
     title: z.ZodString;
     reason: z.ZodString;

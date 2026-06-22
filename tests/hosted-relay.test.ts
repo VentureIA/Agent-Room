@@ -120,9 +120,29 @@ describe("hosted relay", () => {
       const wordpressLink = await readJsonFile<{
         roomId: string;
         projectToken: string;
+        projectId: string;
       }>(path.join(projectA, ".agentroom", "room-link.json"));
       const dashboardAsProject = await fetch(`${relay.url}/api/rooms/${saasLink.roomId}/state`, { headers: { cookie: dashboardCookie! } });
       expect(dashboardAsProject.status).toBe(401);
+
+      const permissionMarkdown = "# agentroom.permissions.md\n\n## Visible\n- README.md\n- src/types/**\n\n## Ask First\n- config/**\n\n## Hidden\n- .env*\n\n## Always Redact\n- tokens\n";
+      const dashboardPermissions = await fetch(`${relay.url}/api/projects/${wordpressLink.projectId}/permissions`, {
+        method: "PUT",
+        headers: {
+          cookie: dashboardCookie!,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ markdown: permissionMarkdown })
+      });
+      expect(dashboardPermissions.status).toBe(200);
+
+      const projectPermissions = await fetch(`${relay.url}/api/rooms/${wordpressLink.roomId}/projects/${wordpressLink.projectId}/permissions`, {
+        headers: {
+          authorization: `Bearer ${wordpressLink.projectToken}`
+        }
+      });
+      expect(projectPermissions.status).toBe(200);
+      await expect(projectPermissions.json()).resolves.toMatchObject({ markdown: permissionMarkdown });
 
       const wordpressActivity = await fetch(`${relay.url}/api/rooms/${wordpressLink.roomId}/file-activity`, {
         method: "POST",
