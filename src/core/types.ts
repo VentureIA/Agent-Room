@@ -68,6 +68,17 @@ export type Question = {
   answeredAt?: string;
 };
 
+export type ProjectSnapshotFile = {
+  path: string;
+  content: string;
+};
+
+export type ProjectSnapshot = {
+  projectId: string;
+  files: ProjectSnapshotFile[];
+  updatedAt: string;
+};
+
 export type Decision = {
   id: string;
   roomId: string;
@@ -196,6 +207,15 @@ export const answerSchema = z.object({
   answer: z.string().min(1),
   suggestedResolution: z.string().optional(),
   confidence: z.enum(["low", "medium", "high"]).default("medium")
+});
+
+export const projectSnapshotSchema = z.object({
+  files: z.array(
+    z.object({
+      path: z.string().min(1),
+      content: z.string()
+    })
+  ).default([])
 });
 
 export const decisionSchema = z.object({

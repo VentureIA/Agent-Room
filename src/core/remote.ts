@@ -7,7 +7,21 @@ import { ensureSafeDirectory, exists, writeTextFile } from "./files.js";
 import { getProjectAgentRoomDir, readProjectLink, writeRemoteProjectLink, type ProjectRoomLink } from "./registry.js";
 import { classifyPath, parsePermissions, readAllowedFile } from "./permissions.js";
 import { defaultPermissionsMarkdown, renderProjectCard } from "./project-card.js";
-import type { AccessRequest, Contract, Decision, FileActivity, FileAlert, FileEditCheck, Message, Project, Question, Room, RoomState } from "./types.js";
+import type {
+  AccessRequest,
+  Contract,
+  Decision,
+  FileActivity,
+  FileAlert,
+  FileEditCheck,
+  Message,
+  Project,
+  ProjectSnapshot,
+  ProjectSnapshotFile,
+  Question,
+  Room,
+  RoomState
+} from "./types.js";
 
 export type RemoteProjectInput = {
   name?: string;
@@ -31,6 +45,9 @@ type ParsedJoinInvite = {
 
 const REMOTE_INVITE_PREFIX = "arr_";
 export const OFFICIAL_AGENTROOM_RELAY_URL = "https://agent-room.venture-ia.com";
+const MAX_SNAPSHOT_FILES = 80;
+const MAX_SNAPSHOT_FILE_CHARS = 20_000;
+const MAX_SNAPSHOT_TOTAL_CHARS = 300_000;
 
 export function resolveDefaultRelayUrl(): string | undefined {
   const relayUrl =
@@ -92,6 +109,16 @@ export class RemoteAgentRoomClient {
     return this.request<Question>(`/api/rooms/${this.link.roomId}/questions`, {
       method: "POST",
       body: JSON.stringify(input)
+    });
+  }
+
+  async publishProjectSnapshot(): Promise<ProjectSnapshot> {
+    const currentProject = await this.getCurrentProject();
+    return this.request<ProjectSnapshot>(`/api/rooms/${this.link.roomId}/project-snapshot`, {
+      method: "POST",
+      body: JSON.stringify({
+        files: await buildProjectSnapshotFiles(this.projectRoot, currentProject)
+      })
     });
   }
 
@@ -178,6 +205,7 @@ export class RemoteAgentRoomClient {
   }
 
   async processInboxAutonomously(options: ProcessInboxOptions = {}): Promise<ProcessInboxResult> {
+    await this.publishProjectSnapshot();
     const currentProject = await this.getCurrentProject();
     const state = await this.getState();
     const questions = state.questions
@@ -257,7 +285,7 @@ export async function connectRemoteRoom(
   });
   const remoteInviteCode = createRemoteInviteCode(response.room.inviteCode, normalizedRelayUrl);
   await prepareRemoteProjectFiles(projectRoot, response.project);
-  await writeRemoteProjectLink(projectRoot, {
+  const link = await writeRemoteProjectLink(projectRoot, {
     roomId: response.room.id,
     inviteCode: remoteInviteCode,
     relayUrl: normalizedRelayUrl,
@@ -265,6 +293,7 @@ export async function connectRemoteRoom(
     projectId: response.project.id,
     projectToken: response.projectToken
   });
+  await new RemoteAgentRoomClient(projectRoot, link).publishProjectSnapshot();
   return { room: response.room, project: response.project, inviteCode: remoteInviteCode, relayUrl: normalizedRelayUrl, dashboardUrl: response.dashboardUrl };
 }
 
@@ -283,13 +312,14 @@ export async function joinRemoteRoom(
   });
   const remoteInviteCode = createRemoteInviteCode(response.room.inviteCode, normalizedRelayUrl);
   await prepareRemoteProjectFiles(projectRoot, response.project);
-  await writeRemoteProjectLink(projectRoot, {
+  const link = await writeRemoteProjectLink(projectRoot, {
     roomId: response.room.id,
     inviteCode: remoteInviteCode,
     relayUrl: normalizedRelayUrl,
     projectId: response.project.id,
     projectToken: response.projectToken
   });
+  await new RemoteAgentRoomClient(projectRoot, link).publishProjectSnapshot();
   return { room: response.room, project: response.project, inviteCode: remoteInviteCode, relayUrl: normalizedRelayUrl };
 }
 
@@ -350,6 +380,34 @@ async function prepareRemoteProjectFiles(projectRoot: string, project: Project):
     await writeTextFile(permissionsPath, defaultPermissionsMarkdown());
   }
   await writeTextFile(path.join(agentRoomDir, "project-card.md"), renderProjectCard(project));
+}
+
+async function buildProjectSnapshotFiles(projectRoot: string, project: Project): Promise<ProjectSnapshotFile[]> {
+  const policy = parsePermissions(await fs.readFile(path.join(getProjectAgentRoomDir(projectRoot), "permissions.md"), "utf8"));
+  const visibleFiles = (await listProjectFiles(projectRoot))
+    .filter((file) => classifyPath(file, policy) === "visible")
+    .slice(0, MAX_SNAPSHOT_FILES);
+  const files: ProjectSnapshotFile[] = [
+    {
+      path: "agentroom/project-card.md",
+      content: renderProjectCard(project)
+    }
+  ];
+  let totalChars = files[0]!.content.length;
+
+  for (const file of visibleFiles) {
+    if (totalChars >= MAX_SNAPSHOT_TOTAL_CHARS) break;
+    try {
+      const content = await readAllowedFile(projectRoot, file, policy);
+      const limited = content.slice(0, MAX_SNAPSHOT_FILE_CHARS);
+      files.push({ path: file, content: limited });
+      totalChars += limited.length;
+    } catch {
+      continue;
+    }
+  }
+
+  return files;
 }
 
 async function relayRequest<T>(relayUrl: string, endpoint: string, token: string | undefined, init: RequestInit): Promise<T> {

@@ -32,6 +32,12 @@ export const answerSchema = z.object({
     suggestedResolution: z.string().optional(),
     confidence: z.enum(["low", "medium", "high"]).default("medium")
 });
+export const projectSnapshotSchema = z.object({
+    files: z.array(z.object({
+        path: z.string().min(1),
+        content: z.string()
+    })).default([])
+});
 export const decisionSchema = z.object({
     title: z.string().min(1),
     reason: z.string().min(1),

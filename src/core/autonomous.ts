@@ -29,7 +29,7 @@ export type DirectQuestionResolution =
       answer: string;
       confidence: "low" | "medium" | "high";
       evidenceFiles: string[];
-      source: "local-project";
+      source: "local-project" | "remote-snapshot";
     }
   | {
       status: "pending";
@@ -280,7 +280,7 @@ function isProjectSummaryQuestion(question: Question): boolean {
 }
 
 function isUsefulProjectSummaryFile(file: string): boolean {
-  return /(^|\/)(readme\.md|package\.json|composer\.json|openapi\.ya?ml|schema\.graphql|docs\/[^/]+\.md)$/i.test(file);
+  return /(^|\/)(agentroom\/project-card\.md|readme\.md|package\.json|composer\.json|openapi\.ya?ml|schema\.graphql|docs\/[^/]+\.md)$/i.test(file);
 }
 
 function moveUsefulSummaryFilesFirst(files: string[]): string[] {

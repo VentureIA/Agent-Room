@@ -57,6 +57,20 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
             urgency: input.urgency
           });
 
+    if (store instanceof RemoteAgentRoomClient && question.status === "answered" && question.answer) {
+      return {
+        question,
+        directAnswer: {
+          status: "answered",
+          questionId: question.id,
+          answer: question.answer,
+          confidence: question.confidence ?? "medium",
+          evidenceFiles: [],
+          source: "remote-snapshot"
+        }
+      };
+    }
+
     if (input.direct === false || store instanceof RemoteAgentRoomClient) {
       return {
         question,

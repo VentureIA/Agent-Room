@@ -24,7 +24,7 @@ export type DirectQuestionResolution = {
     answer: string;
     confidence: "low" | "medium" | "high";
     evidenceFiles: string[];
-    source: "local-project";
+    source: "local-project" | "remote-snapshot";
 } | {
     status: "pending";
     questionId: string;

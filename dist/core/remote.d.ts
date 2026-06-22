@@ -1,6 +1,6 @@
 import { type ProcessInboxOptions, type ProcessInboxResult } from "./autonomous.js";
 import { type ProjectRoomLink } from "./registry.js";
-import type { AccessRequest, Contract, Decision, FileActivity, FileAlert, FileEditCheck, Message, Project, Question, Room, RoomState } from "./types.js";
+import type { AccessRequest, Contract, Decision, FileActivity, FileAlert, FileEditCheck, Message, Project, ProjectSnapshot, Question, Room, RoomState } from "./types.js";
 export type RemoteProjectInput = {
     name?: string;
     role?: string;
@@ -36,6 +36,7 @@ export declare class RemoteAgentRoomClient {
         impact: string;
         urgency: "low" | "normal" | "blocking";
     }): Promise<Question>;
+    publishProjectSnapshot(): Promise<ProjectSnapshot>;
     answerQuestionForProject(_projectId: string, input: {
         questionId: string;
         answer: string;

@@ -334,6 +334,10 @@ program
         urgency: options.urgency
       });
       console.log(`Question recorded: ${question.id}`);
+      if (question.status === "answered" && question.answer) {
+        console.log(`Question answered automatically: ${question.id}`);
+        console.log(question.answer);
+      }
       return;
     }
     const store = await AgentRoomStore.requireLinkedProject();

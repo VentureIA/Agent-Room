@@ -9,7 +9,8 @@ import { z } from "zod";
 import { ensureSafeDirectory, exists, readJson, writeJson } from "../core/files.js";
 import { createId } from "../core/ids.js";
 import { AgentRoomStore } from "../core/storage.js";
-import { answerSchema, contractSchema, decisionSchema, fileActivitySchema, fileAlertConfirmationSchema, fileEditCheckSchema } from "../core/types.js";
+import { draftAnswerFromEvidence } from "../core/autonomous.js";
+import { answerSchema, contractSchema, decisionSchema, fileActivitySchema, fileAlertConfirmationSchema, fileEditCheckSchema, projectSnapshotSchema } from "../core/types.js";
 const remoteProjectSchema = z.object({
     name: z.string().min(1),
     role: z.string().optional(),
@@ -138,8 +139,21 @@ export async function startHostedRelay(options = {}) {
                 impact: input.impact,
                 urgency: input.urgency
             });
+            const answeredQuestion = await tryAnswerQuestionFromSnapshot(context.store, question, input.toProjectId);
             await broadcastRoomState(context.store, wss);
-            res.status(201).json(question);
+            res.status(201).json(answeredQuestion ?? question);
+        }
+        catch (error) {
+            next(error);
+        }
+    });
+    app.post("/api/rooms/:roomId/project-snapshot", requireProject(dataDir), async (req, res, next) => {
+        try {
+            const context = requestProjectContext(req);
+            const input = projectSnapshotSchema.parse(req.body);
+            const snapshot = await context.store.upsertProjectSnapshotForProject(context.project.id, input.files);
+            await broadcastRoomState(context.store, wss);
+            res.json(snapshot);
         }
         catch (error) {
             next(error);
@@ -373,6 +387,39 @@ function requireAdmin(adminToken, allowOpenRoomCreate) {
         }
         res.status(401).json({ error: "AgentRoom relay admin token required." });
     };
+}
+async function tryAnswerQuestionFromSnapshot(store, question, toProjectId) {
+    const state = await store.getState();
+    const project = state.projects.find((candidate) => candidate.id === toProjectId);
+    if (!project)
+        return undefined;
+    const snapshot = await store.getProjectSnapshotForProject(toProjectId);
+    if (!snapshot)
+        return undefined;
+    const draft = await draftAnswerFromEvidence(new SnapshotEvidenceReader(snapshot), question, project, 50);
+    if (!draft)
+        return undefined;
+    return store.answerQuestionForProject(toProjectId, {
+        questionId: question.id,
+        answer: draft.answer,
+        suggestedResolution: draft.suggestedResolution,
+        confidence: draft.confidence
+    });
+}
+class SnapshotEvidenceReader {
+    files;
+    constructor(snapshot) {
+        this.files = snapshot.files;
+    }
+    async listVisibleFiles() {
+        return this.files.map((file) => file.path);
+    }
+    async readAllowedProjectFile(relativePath) {
+        const file = this.files.find((candidate) => candidate.path === relativePath);
+        if (!file)
+            throw new Error(`Snapshot file not found: ${relativePath}`);
+        return file.content;
+    }
 }
 function requireProject(dataDir) {
     return async (req, res, next) => {

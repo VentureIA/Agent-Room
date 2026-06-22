@@ -232,6 +232,29 @@ export class AgentRoomStore {
         }
         return this.answerQuestion(input);
     }
+    async upsertProjectSnapshotForProject(projectId, files) {
+        this.assertProjectExists(projectId);
+        const snapshot = {
+            projectId,
+            files,
+            updatedAt: nowIso()
+        };
+        this.openDb()
+            .prepare(`insert into project_snapshots (project_id, files_json, updated_at)
+         values (?, ?, ?)
+         on conflict(project_id) do update set
+          files_json = excluded.files_json,
+          updated_at = excluded.updated_at`)
+            .run(snapshot.projectId, JSON.stringify(snapshot.files), snapshot.updatedAt);
+        return snapshot;
+    }
+    async getProjectSnapshotForProject(projectId) {
+        this.assertProjectExists(projectId);
+        const row = this.openDb()
+            .prepare("select * from project_snapshots where project_id = ? limit 1")
+            .get(projectId);
+        return row ? mapProjectSnapshot(row) : undefined;
+    }
     async recordDecision(input) {
         const room = await this.initialize();
         const decision = { id: createId("d"), roomId: room.id, createdAt: nowIso(), ...input };
@@ -582,6 +605,11 @@ export class AgentRoomStore {
         created_at text not null,
         answered_at text
       );
+      create table if not exists project_snapshots (
+        project_id text primary key,
+        files_json text not null,
+        updated_at text not null
+      );
       create table if not exists decisions (
         id text primary key,
         room_id text not null,
@@ -792,6 +820,13 @@ function mapQuestion(row) {
         confidence: row.confidence === "low" || row.confidence === "high" ? row.confidence : row.confidence ? "medium" : undefined,
         createdAt: String(row.created_at),
         answeredAt: row.answered_at ? String(row.answered_at) : undefined
+    };
+}
+function mapProjectSnapshot(row) {
+    return {
+        projectId: String(row.project_id),
+        files: parseJsonArray(String(row.files_json)),
+        updatedAt: String(row.updated_at)
     };
 }
 function mapDecision(row) {

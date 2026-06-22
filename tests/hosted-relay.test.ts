@@ -210,12 +210,8 @@ describe("hosted relay", () => {
         "blocking"
       );
       expect(asked).toContain("Question recorded:");
-
-      const inbox = await runCli(projectA, { ...process.env, AGENTROOM_HOME: homeA }, "inbox");
-      expect(inbox).toContain("Can heroImage be null?");
-
-      const processed = await runCli(projectA, { ...process.env, AGENTROOM_HOME: homeA }, "process-inbox");
-      expect(processed).toContain("ANSWERED");
+      expect(asked).toContain("Question answered automatically:");
+      expect(asked).toContain("src/types/case-study.ts");
 
       const summary = await runCli(projectB, { ...process.env, AGENTROOM_HOME: homeB }, "summary");
       expect(summary).toContain("0 question(s) ouverte");

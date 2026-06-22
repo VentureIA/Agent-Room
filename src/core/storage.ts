@@ -26,6 +26,8 @@ import type {
   FileEditCheck,
   Message,
   Project,
+  ProjectSnapshot,
+  ProjectSnapshotFile,
   Question,
   Room,
   RoomState
@@ -371,6 +373,33 @@ export class AgentRoomStore {
       throw new Error(`Project ${projectId} cannot answer question ${input.questionId}; it is addressed to ${mapped.toProjectId}.`);
     }
     return this.answerQuestion(input);
+  }
+
+  async upsertProjectSnapshotForProject(projectId: string, files: ProjectSnapshotFile[]): Promise<ProjectSnapshot> {
+    this.assertProjectExists(projectId);
+    const snapshot: ProjectSnapshot = {
+      projectId,
+      files,
+      updatedAt: nowIso()
+    };
+    this.openDb()
+      .prepare(
+        `insert into project_snapshots (project_id, files_json, updated_at)
+         values (?, ?, ?)
+         on conflict(project_id) do update set
+          files_json = excluded.files_json,
+          updated_at = excluded.updated_at`
+      )
+      .run(snapshot.projectId, JSON.stringify(snapshot.files), snapshot.updatedAt);
+    return snapshot;
+  }
+
+  async getProjectSnapshotForProject(projectId: string): Promise<ProjectSnapshot | undefined> {
+    this.assertProjectExists(projectId);
+    const row = this.openDb()
+      .prepare("select * from project_snapshots where project_id = ? limit 1")
+      .get(projectId) as StoredRow | undefined;
+    return row ? mapProjectSnapshot(row) : undefined;
   }
 
   async recordDecision(input: Omit<Decision, "id" | "roomId" | "createdAt">): Promise<Decision> {
@@ -835,6 +864,11 @@ export class AgentRoomStore {
         created_at text not null,
         answered_at text
       );
+      create table if not exists project_snapshots (
+        project_id text primary key,
+        files_json text not null,
+        updated_at text not null
+      );
       create table if not exists decisions (
         id text primary key,
         room_id text not null,
@@ -1027,9 +1061,9 @@ export class AgentRoomStore {
   }
 }
 
-function parseJsonArray(value: unknown): string[] {
+function parseJsonArray<T = string>(value: unknown): T[] {
   if (typeof value !== "string") return [];
-  return JSON.parse(value) as string[];
+  return JSON.parse(value) as T[];
 }
 
 function mapRoom(row: StoredRow): Room {
@@ -1092,6 +1126,14 @@ function mapQuestion(row: StoredRow): Question {
     confidence: row.confidence === "low" || row.confidence === "high" ? row.confidence : row.confidence ? "medium" : undefined,
     createdAt: String(row.created_at),
     answeredAt: row.answered_at ? String(row.answered_at) : undefined
+  };
+}
+
+function mapProjectSnapshot(row: StoredRow): ProjectSnapshot {
+  return {
+    projectId: String(row.project_id),
+    files: parseJsonArray<ProjectSnapshotFile>(String(row.files_json)),
+    updatedAt: String(row.updated_at)
   };
 }
 

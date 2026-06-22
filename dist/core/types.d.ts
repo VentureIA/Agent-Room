@@ -49,6 +49,15 @@ export type Question = {
     createdAt: string;
     answeredAt?: string;
 };
+export type ProjectSnapshotFile = {
+    path: string;
+    content: string;
+};
+export type ProjectSnapshot = {
+    projectId: string;
+    files: ProjectSnapshotFile[];
+    updatedAt: string;
+};
 export type Decision = {
     id: string;
     roomId: string;
@@ -177,6 +186,12 @@ export declare const answerSchema: z.ZodObject<{
         medium: "medium";
         high: "high";
     }>>;
+}, z.core.$strip>;
+export declare const projectSnapshotSchema: z.ZodObject<{
+    files: z.ZodDefault<z.ZodArray<z.ZodObject<{
+        path: z.ZodString;
+        content: z.ZodString;
+    }, z.core.$strip>>>;
 }, z.core.$strip>;
 export declare const decisionSchema: z.ZodObject<{
     title: z.ZodString;

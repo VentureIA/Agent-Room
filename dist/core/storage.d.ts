@@ -1,5 +1,5 @@
 import { type RoomRecord } from "./registry.js";
-import type { AccessRequest, Contract, Decision, FileActivity, FileAlert, FileEditCheck, Message, Project, Question, Room, RoomState } from "./types.js";
+import type { AccessRequest, Contract, Decision, FileActivity, FileAlert, FileEditCheck, Message, Project, ProjectSnapshot, ProjectSnapshotFile, Question, Room, RoomState } from "./types.js";
 export declare class AgentRoomStore {
     readonly projectRoot: string;
     readonly projectAgentRoomDir: string;
@@ -67,6 +67,8 @@ export declare class AgentRoomStore {
         suggestedResolution?: string;
         confidence: "low" | "medium" | "high";
     }): Promise<Question>;
+    upsertProjectSnapshotForProject(projectId: string, files: ProjectSnapshotFile[]): Promise<ProjectSnapshot>;
+    getProjectSnapshotForProject(projectId: string): Promise<ProjectSnapshot | undefined>;
     recordDecision(input: Omit<Decision, "id" | "roomId" | "createdAt">): Promise<Decision>;
     updateDecisionStatus(input: {
         decisionId: string;

@@ -196,7 +196,7 @@ function isProjectSummaryQuestion(question) {
     return /\b(summary|summarize|summarise|purpose|overview|architecture|features?|stack|objective|resume|resumer|résumé|résumer|objectif|fonctionnalités?|a quoi sert|à quoi sert)\b/i.test(`${question.topic} ${question.question}`);
 }
 function isUsefulProjectSummaryFile(file) {
-    return /(^|\/)(readme\.md|package\.json|composer\.json|openapi\.ya?ml|schema\.graphql|docs\/[^/]+\.md)$/i.test(file);
+    return /(^|\/)(agentroom\/project-card\.md|readme\.md|package\.json|composer\.json|openapi\.ya?ml|schema\.graphql|docs\/[^/]+\.md)$/i.test(file);
 }
 function moveUsefulSummaryFilesFirst(files) {
     return [
