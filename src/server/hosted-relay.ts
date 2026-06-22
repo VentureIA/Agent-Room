@@ -399,7 +399,7 @@ export async function startHostedRelay(options: HostedRelayOptions = {}): Promis
 
 function requireAdmin(adminToken: string | undefined, allowOpenRoomCreate: boolean) {
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if ((allowOpenRoomCreate && !adminToken) || bearerToken(req) === adminToken) {
+    if (allowOpenRoomCreate || bearerToken(req) === adminToken) {
       next();
       return;
     }

@@ -41,7 +41,8 @@ describe("hosted relay", () => {
       host: "127.0.0.1",
       port: 0,
       dataDir,
-      adminToken: "test-admin-token"
+      adminToken: "test-admin-token",
+      allowOpenRoomCreate: true
     });
     servers.push(relay.server);
 
@@ -53,10 +54,8 @@ describe("hosted relay", () => {
 
       const connected = await runCli(
         projectA,
-        { ...process.env, AGENTROOM_HOME: homeA, AGENTROOM_RELAY_ADMIN_TOKEN: "test-admin-token" },
+        { ...process.env, AGENTROOM_HOME: homeA, AGENTROOM_RELAY_URL: relay.url },
         "connect",
-        "--relay",
-        relay.url,
         "--name",
         "WordPress",
         "--agent",
@@ -218,6 +217,49 @@ describe("hosted relay", () => {
 
       const summary = await runCli(projectB, { ...process.env, AGENTROOM_HOME: homeB }, "summary");
       expect(summary).toContain("0 question(s) ouverte");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("initializes a hosted room from the default relay without relay flags", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agentroom-default-relay-init-"));
+    const project = path.join(root, "project");
+    const home = path.join(root, "home");
+    const dataDir = path.join(root, "relay-data");
+    await mkdir(project, { recursive: true });
+    await writePackage(project, "default-relay-init", {});
+
+    const relay = await startHostedRelay({
+      host: "127.0.0.1",
+      port: 0,
+      dataDir,
+      allowOpenRoomCreate: true
+    });
+    servers.push(relay.server);
+
+    try {
+      const initialized = await runCli(
+        project,
+        { ...process.env, AGENTROOM_HOME: home, AGENTROOM_RELAY_URL: relay.url },
+        "init",
+        "codex"
+      );
+      const invite = initialized.match(/Invite code: (\S+)/)?.[1];
+      expect(invite).toMatch(/^arr_/);
+      expect(initialized).toContain(`Relay: ${relay.url}`);
+      expect(initialized).toContain("Codex MCP: OK");
+
+      const link = await readJsonFile<{
+        mode: string;
+        inviteCode: string;
+        relayUrl: string;
+      }>(path.join(project, ".agentroom", "room-link.json"));
+      expect(link).toMatchObject({
+        mode: "remote",
+        inviteCode: invite,
+        relayUrl: relay.url
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

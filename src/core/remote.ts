@@ -31,6 +31,15 @@ type ParsedJoinInvite = {
 
 const REMOTE_INVITE_PREFIX = "arr_";
 
+export function resolveDefaultRelayUrl(): string | undefined {
+  const relayUrl =
+    process.env.AGENTROOM_RELAY_URL?.trim() ||
+    process.env.AGENTROOM_DEFAULT_RELAY_URL?.trim() ||
+    process.env.npm_config_agentroom_relay_url?.trim() ||
+    process.env.npm_config_agentroom_relay?.trim();
+  return relayUrl ? normalizeRelayUrl(relayUrl) : undefined;
+}
+
 export class RemoteAgentRoomClient {
   readonly projectRoot: string;
   readonly link: ProjectRoomLink;

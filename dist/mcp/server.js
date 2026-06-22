@@ -7,7 +7,7 @@ import { z } from "zod";
 import { processInboxAutonomously, resolveQuestionForLocalProject } from "../core/autonomous.js";
 import { installMcpConfig } from "../core/install.js";
 import { findRoomByInvite, readProjectLink } from "../core/registry.js";
-import { connectRemoteRoom, joinRemoteRoom, parseJoinInviteCode, RemoteAgentRoomClient } from "../core/remote.js";
+import { connectRemoteRoom, joinRemoteRoom, parseJoinInviteCode, resolveDefaultRelayUrl, RemoteAgentRoomClient } from "../core/remote.js";
 import { setupAgentRoom } from "../core/setup.js";
 import { AgentRoomStore } from "../core/storage.js";
 import { startRelay } from "../server/relay.js";
@@ -120,8 +120,9 @@ export async function runMcpServer(root = process.env.AGENTROOM_PROJECT_ROOT ?? 
             relayAdminToken: z.string().optional()
         }
     }, async (input) => {
-        if (input.relayUrl) {
-            const connected = await connectRemoteRoom(root, input.relayUrl, input.relayAdminToken ?? process.env.AGENTROOM_RELAY_ADMIN_TOKEN, input);
+        const relayUrl = input.relayUrl ?? resolveDefaultRelayUrl();
+        if (relayUrl) {
+            const connected = await connectRemoteRoom(root, relayUrl, input.relayAdminToken ?? process.env.AGENTROOM_RELAY_ADMIN_TOKEN, input);
             return text(JSON.stringify(connected, null, 2));
         }
         const connected = await AgentRoomStore.createSharedRoom(root, input);

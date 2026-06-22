@@ -715,7 +715,7 @@ through the MCP tools.
 ## Multi-Machine Mode With A Hosted Relay
 
 For two developers on two different computers, run the hosted relay on your own
-server, then connect each project to the relay.
+server, then expose that relay as the default for AgentRoom commands.
 
 Start the relay locally for a quick test:
 
@@ -723,25 +723,29 @@ Start the relay locally for a quick test:
 npm run build
 AGENTROOM_RELAY_ADMIN_TOKEN=change-me \
 AGENTROOM_RELAY_DATA_DIR=.agentroom-relay \
+AGENTROOM_RELAY_ALLOW_OPEN_CREATE=true \
 PORT=4318 \
 npm run serve:relay
+```
+
+Configure the default relay URL in the developer environment or shell profile:
+
+```bash
+export AGENTROOM_RELAY_URL=https://agentroom.example.com
 ```
 
 Developer A creates the remote room:
 
 ```bash
 cd /path/to/wordpress-project
-npx -y agentroom-ai connect \
-  --relay https://agentroom.example.com \
-  --relay-token change-me \
-  --name WordPress \
-  --agent Claude
+npx -y agentroom-ai init
+# or: npx -y agentroom-ai connect
 ```
 
 The command prints:
 
 ```text
-Invite code: ar_XXXXXXX
+Invite code: arr_eyJ...
 Dashboard: https://agentroom.example.com/dashboard/ar_XXXXXXX?token=ard_...
 ```
 
@@ -752,10 +756,7 @@ Developer B joins from another computer:
 
 ```bash
 cd /path/to/saas-project
-npx -y agentroom-ai join ar_XXXXXXX \
-  --relay https://agentroom.example.com \
-  --name SaaS \
-  --agent Codex
+npx -y agentroom-ai join arr_eyJ...
 ```
 
 After that, the normal commands work from either machine:

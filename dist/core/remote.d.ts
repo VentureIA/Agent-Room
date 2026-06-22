@@ -18,6 +18,7 @@ type ParsedJoinInvite = {
     inviteCode: string;
     relayUrl?: string;
 };
+export declare function resolveDefaultRelayUrl(): string | undefined;
 export declare class RemoteAgentRoomClient {
     readonly projectRoot: string;
     readonly link: ProjectRoomLink;

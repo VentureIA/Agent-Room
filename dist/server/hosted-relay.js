@@ -367,7 +367,7 @@ export async function startHostedRelay(options = {}) {
 }
 function requireAdmin(adminToken, allowOpenRoomCreate) {
     return (req, res, next) => {
-        if ((allowOpenRoomCreate && !adminToken) || bearerToken(req) === adminToken) {
+        if (allowOpenRoomCreate || bearerToken(req) === adminToken) {
             next();
             return;
         }

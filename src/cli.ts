@@ -11,7 +11,7 @@ import { startRelay } from "./server/relay.js";
 import { startHostedRelay } from "./server/hosted-relay.js";
 import { runMcpServer } from "./mcp/server.js";
 import { findRoomByInvite, getAgentRoomHome, readProjectLink } from "./core/registry.js";
-import { connectRemoteRoom, joinRemoteRoom, parseJoinInviteCode, RemoteAgentRoomClient } from "./core/remote.js";
+import { connectRemoteRoom, joinRemoteRoom, parseJoinInviteCode, resolveDefaultRelayUrl, RemoteAgentRoomClient } from "./core/remote.js";
 import { answerSchema, questionSchema } from "./core/types.js";
 
 const program = new Command();
@@ -58,12 +58,25 @@ program
   .option("--role <role>", "project role")
   .option("--agent <agentKind>", "primary agent kind")
   .option("--owner <humanOwner>", "human owner", "Human owner")
+  .option("--relay <url>", "hosted AgentRoom relay URL")
+  .option("--relay-token <token>", "hosted relay admin token for creating rooms")
+  .option("--local", "force local room creation even when a default relay is configured")
   .option("--local-command", "write MCP config pointing to this local checkout instead of npx")
   .option("--package <spec>", "package spec used by generated npx MCP configs")
   .action(async (client: string, options) => {
     printPixelBanner("init");
-    const results = await installClients(parseMcpClients(client, "init"), options);
-    printReady("AgentRoom ready", results);
+    const clients = parseMcpClients(client, "init");
+    const relayUrl = options.local ? undefined : options.relay ?? resolveDefaultRelayUrl();
+    if (relayUrl && !(await readProjectLink(process.cwd()))) {
+      await connectRemoteRoom(process.cwd(), relayUrl, options.relayToken ?? process.env.AGENTROOM_RELAY_ADMIN_TOKEN, {
+        name: options.name,
+        role: options.role,
+        agentKind: options.agent ?? defaultAgentForClients(clients),
+        humanOwner: options.owner
+      });
+    }
+    const results = await installClients(clients, options);
+    await printReady("AgentRoom ready", results);
   });
 
 program
@@ -147,9 +160,11 @@ program
   .option("--owner <humanOwner>", "human owner", "Human owner")
   .option("--relay <url>", "hosted AgentRoom relay URL")
   .option("--relay-token <token>", "hosted relay admin token for creating rooms")
+  .option("--local", "force local room creation even when a default relay is configured")
   .action(async (options) => {
-    if (options.relay) {
-      const connected = await connectRemoteRoom(process.cwd(), options.relay, options.relayToken ?? process.env.AGENTROOM_RELAY_ADMIN_TOKEN, {
+    const relayUrl = options.local ? undefined : options.relay ?? resolveDefaultRelayUrl();
+    if (relayUrl) {
+      const connected = await connectRemoteRoom(process.cwd(), relayUrl, options.relayToken ?? process.env.AGENTROOM_RELAY_ADMIN_TOKEN, {
         name: options.name,
         role: options.role,
         agentKind: options.agent,
@@ -204,7 +219,7 @@ program
       console.log(`Joined remote AgentRoom via ${joined.inviteCode} as ${joined.project.name}.`);
       console.log(`Relay: ${joined.relayUrl}`);
       const results = await installClients(clients, options);
-      printReady("AgentRoom ready", results);
+      await printReady("AgentRoom ready", results);
       return;
     }
     const record = await findRoomByInvite(parsedInvite.inviteCode);
@@ -220,7 +235,7 @@ program
     console.log(`Joined ${room.name} via ${inviteCode} as ${project.name}.`);
     console.log(`Shared room: ${record.roomDir}`);
     const results = await installClients(clients, options);
-    printReady("AgentRoom ready", results);
+    await printReady("AgentRoom ready", results);
   });
 
 program
@@ -598,15 +613,21 @@ function shouldColorizeBanner(): boolean {
   return Boolean(process.stdout.isTTY && !process.env.NO_COLOR && !process.env.CI);
 }
 
-function printReady(
+async function printReady(
   heading: string,
   results: Awaited<ReturnType<typeof installClients>>
-): void {
+): Promise<void> {
   const setup = results[0]?.setup;
   if (!setup) throw new Error("AgentRoom did not install any MCP client.");
+  const link = await readProjectLink(process.cwd());
+  const inviteCode = link?.mode === "remote" ? link.inviteCode : setup.room.inviteCode;
   console.log(`${heading} for ${setup.project.name}.`);
-  console.log(`Invite code: ${setup.room.inviteCode}`);
-  console.log(`Projects can join with: npx -y agentroom-ai join ${setup.room.inviteCode}`);
+  console.log(`Invite code: ${inviteCode}`);
+  console.log(`Projects can join with: npx -y agentroom-ai join ${inviteCode}`);
+  if (link?.mode === "remote") {
+    console.log(`Relay: ${link.relayUrl}`);
+    if (link.dashboardUrl) console.log(`Dashboard: ${link.dashboardUrl}`);
+  }
   for (const result of results) {
     console.log(`${labelMcpClient(result.client)} MCP: OK (${result.configPath})`);
   }

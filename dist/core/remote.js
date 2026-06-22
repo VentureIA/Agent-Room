@@ -8,6 +8,13 @@ import { getProjectAgentRoomDir, readProjectLink, writeRemoteProjectLink } from 
 import { classifyPath, parsePermissions, readAllowedFile } from "./permissions.js";
 import { defaultPermissionsMarkdown, renderProjectCard } from "./project-card.js";
 const REMOTE_INVITE_PREFIX = "arr_";
+export function resolveDefaultRelayUrl() {
+    const relayUrl = process.env.AGENTROOM_RELAY_URL?.trim() ||
+        process.env.AGENTROOM_DEFAULT_RELAY_URL?.trim() ||
+        process.env.npm_config_agentroom_relay_url?.trim() ||
+        process.env.npm_config_agentroom_relay?.trim();
+    return relayUrl ? normalizeRelayUrl(relayUrl) : undefined;
+}
 export class RemoteAgentRoomClient {
     projectRoot;
     link;
